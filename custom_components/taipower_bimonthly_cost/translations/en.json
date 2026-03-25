@@ -42,7 +42,7 @@
           "billing_mode": "Billing Mode",
           "manual_rates": "Manual Rates Override (JSON)"
         },
-        "description": "Modify TaiPower settings. Leave empty to use default rates.\n\nManual rates JSON format:\n{\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\n\nAvailable modes: residential, non_commercial, commercial",
+        "description": "Modify TaiPower settings. Manual rates: JSON format, leave empty for defaults.",
         "title": "TaiPower Settings"
       }
     }
@@ -50,7 +50,7 @@
   "services": {
     "update_config": {
       "name": "Update TaiPower config",
-      "description": "Update TaiPower integration settings (sensor, billing mode, meter start day)",
+      "description": "Update TaiPower integration settings (sensor, billing mode, meter start day, manual rates)",
       "fields": {
         "bimonthly_energy": {
           "name": "Energy sensor entity",
@@ -63,6 +63,10 @@
         "meter_start_day": {
           "name": "Meter start day",
           "description": "Meter reading start date"
+        },
+        "manual_rates": {
+          "name": "Manual Rates Override",
+          "description": "JSON format custom rates, leave empty for defaults"
         }
       }
     }
