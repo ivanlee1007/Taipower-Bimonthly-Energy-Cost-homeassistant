@@ -1,5 +1,6 @@
 """The TaiPower Energy Cost integration."""
 import asyncio
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -23,6 +24,10 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Load manifest for version info
+_MANIFEST_PATH = Path(__file__).parent / "manifest.json"
+MANIFEST = json.loads(_MANIFEST_PATH.read_text()) if _MANIFEST_PATH.exists() else {}
 
 CONFIG_SCHEMA = vol.Schema(
     {DOMAIN: vol.Schema({vol.Optional(CONF_BIMONTHLY_ENERGY): cv.string})},
@@ -61,13 +66,9 @@ def _install_card_js(hass: HomeAssistant) -> bool:
 
 
 def _get_card_js_url(hass: HomeAssistant) -> str:
-    """Return card JS URL with mtime-based cache busting."""
-    dst = _get_card_dst(hass)
-    try:
-        mtime = int(dst.stat().st_mtime)
-    except (FileNotFoundError, OSError):
-        mtime = 0
-    return f"/local/{_CARD_DIR_NAME}/{_CARD_SRC_NAME}?v={mtime}"
+    """Return card JS URL with version-based cache busting."""
+    version = MANIFEST.get("version", "0")
+    return f"/local/{_CARD_DIR_NAME}/{_CARD_SRC_NAME}?v={version}"
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
