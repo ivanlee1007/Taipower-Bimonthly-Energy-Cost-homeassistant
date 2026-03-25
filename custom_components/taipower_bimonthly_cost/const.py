@@ -116,21 +116,50 @@ def get_effective_tiers(entry_data_or_options: dict, mode: str) -> list[dict]:
 
 # ── Cost Calculation ─────────────────────────────────────────────────────────
 
-def calculate_cost(kwh: float, mode: str, is_summer: bool, tiers: list[dict] | None = None) -> tuple:
-    """Calculate the cost and average kWh cost from cumulative kWh usage.
+def get_tier_rate(kwh: float, mode: str, is_summer: bool, tiers: list[dict] | None = None) -> float | None:
+    """Return the rate (TWD/kWh) for the tier that kwh falls into.
 
-    Uses progressive (累進) tiered pricing:
-      - For each tier, the rate applies only to the kWh within that tier.
-      - The *average* kWh cost (self._kwh_cost) is total_cost / total_kwh.
+    This matches the original cnstudio design: kwh_cost is the tier rate,
+    NOT an average. It answers "which rate applies at this usage level?"
 
     Args:
         kwh: Total kWh usage.
-        mode: Billing mode key (residential / non_commercial / commercial).
+        mode: Billing mode key.
         is_summer: True for summer months (6-9).
-        tiers: Optional override tiers. If None, uses BILLING_MODES defaults.
+        tiers: Optional override tiers.
 
     Returns:
-        (total_cost, avg_kwh_cost)  or  (None, None) if kwh < 0 or mode not found.
+        The rate for the current tier, or None if inputs are invalid.
+    """
+    if kwh < 0:
+        return None
+
+    if tiers is None:
+        if mode not in BILLING_MODES:
+            return None
+        tiers = BILLING_MODES[mode]["tiers"]
+
+    rate_key = "rate_summer" if is_summer else "rate_non_summer"
+
+    for tier in tiers:
+        upper = tier["threshold"]
+        if upper is not None and kwh < upper:
+            return tier[rate_key]
+        elif upper is None:
+            # last/open tier
+            return tier[rate_key]
+
+    return None
+
+
+def calculate_cost(kwh: float, mode: str, is_summer: bool, tiers: list[dict] | None = None) -> tuple:
+    """Calculate total cost using progressive (累進) tiered pricing.
+
+    For each tier, the rate applies only to the kWh within that tier.
+    Same concept as original cnstudio: total_cost = sum of each tier's kWh * rate.
+
+    Returns:
+        (total_cost, tier_rate)  or  (None, None) if kwh < 0 or mode not found.
     """
     if kwh < 0:
         return None, None
@@ -145,6 +174,7 @@ def calculate_cost(kwh: float, mode: str, is_summer: bool, tiers: list[dict] | N
     total_cost = 0.0
     remaining = kwh
     prev_threshold = 0
+    tier_rate = None
 
     for tier in tiers:
         upper = tier["threshold"]
@@ -157,15 +187,15 @@ def calculate_cost(kwh: float, mode: str, is_summer: bool, tiers: list[dict] | N
             prev_threshold = upper if upper is not None else prev_threshold
             continue
 
-        total_cost += tier_usage * tier[rate_key]
+        tier_rate = tier[rate_key]
+        total_cost += tier_usage * tier_rate
         remaining -= tier_usage
         prev_threshold = upper if upper is not None else prev_threshold
 
         if remaining <= 0:
             break
 
-    avg_kwh_cost = total_cost / kwh if kwh > 0 else None
-    return total_cost, avg_kwh_cost
+    return total_cost, tier_rate
 
 
 # ── Rates Validation ─────────────────────────────────────────────────────────

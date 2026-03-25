@@ -145,8 +145,8 @@ class KwhCostSensor(CostSensor):
             if isinstance(state, (float, int, str)):
                 is_summer = now.month in [6, 7, 8, 9]
                 tiers = get_effective_tiers(self._entry_data, self._billing_mode)
-                _, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer, tiers)
-                self._kwh_cost = avg_cost
+                _, tier_rate = calculate_cost(float(state), self._billing_mode, is_summer, tiers)
+                self._kwh_cost = tier_rate
         return self._kwh_cost
 
 
@@ -179,8 +179,8 @@ class EnergyCostSensor(KwhCostSensor):
             if isinstance(state, (float, int, str)):
                 is_summer = now.month in [6, 7, 8, 9]
                 tiers = get_effective_tiers(self._entry_data, self._billing_mode)
-                total_cost, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer, tiers)
-                self._kwh_cost = avg_cost
+                total_cost, tier_rate = calculate_cost(float(state), self._billing_mode, is_summer, tiers)
+                self._kwh_cost = tier_rate
                 value = total_cost
         if ((now - self._reset_day).days % 60) == 59:
             if now.hour == 23 and now.minute == 59 and 0 < now.second <= 59:
