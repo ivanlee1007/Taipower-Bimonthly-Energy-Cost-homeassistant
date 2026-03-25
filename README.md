@@ -17,6 +17,7 @@ Calculate Taipower (Taiwan Power Company) bi-monthly (60 days) bill amount from 
 - **能源面板整合**：提供 `kwh_cost` sensor 給 HA 內建能源面板作為電費單價
 - **裝置頁整合**：所有實體（3 個 sensor + 1 個 button）自動歸入同一裝置頁
 - **設定卡片**：提供 Lovelace 自訂卡片，不需進 Options 流程即可修改設定
+- **即時更新**：Options 流程儲存後自動重新載入，改實體時舊 sensor 自動清除
 
 ### 📋 當前費率版本
 
