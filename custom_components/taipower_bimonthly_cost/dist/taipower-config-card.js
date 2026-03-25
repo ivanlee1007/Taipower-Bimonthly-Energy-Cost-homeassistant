@@ -22,18 +22,24 @@ class TaiPowerConfigCard extends HTMLElement {
     if (!this._entryId) {
       this._findEntry();
     }
-    this.render();
+    this._renderIfNeeded();
+  }
+
+  _renderIfNeeded() {
+    // Only re-render if state actually changed
+    const el = this.querySelector('.card-content');
+    if (!el) {
+      this.render();
+    }
   }
 
   async _findEntry() {
     if (!this._hass) return;
     try {
-      const resp = await this._hass.callApi('GET', 'config/config_entries/flow');
-      const entries = resp.filter(e => e.handler === 'taipower_bimonthly_cost');
-      if (entries.length > 0) {
-        this._entryId = entries[0].flow_id;
-        await this._loadConfig();
-      }
+      // Get all config entries and find taipower one
+      const entries = this._hass.configEntries?.entries || [];
+      // Fallback: scan entity attributes
+      this._loadFromEntities();
     } catch (e) {
       this._error = '找不到台電整合設定';
       this._loading = false;
@@ -41,48 +47,43 @@ class TaiPowerConfigCard extends HTMLElement {
     }
   }
 
-  async _loadConfig() {
-    if (!this._hass || !this._entryId) return;
-    try {
-      // Fetch config entry from .storage via states
-      const resp = await fetch('/api/config/config_entries/flow', {
-        headers: { 'Authorization': `Bearer ${this._hass.connection.options.auth.access_token}` }
-      });
-      // Alternative: get entity attributes for rate info
-      const sensorEntity = Object.keys(this._hass.states).find(
-        id => id.startsWith('sensor.taipower_') && id.endsWith('_rate_status')
-      );
-      if (sensorEntity) {
-        const sensor = this._hass.states[sensorEntity];
-        this._rates = {
-          pdf_version: sensor.attributes.pdf_version || 'unknown',
-          rates_version: sensor.attributes.rates_version || 'unknown',
-          manual_override: sensor.attributes.manual_override || false,
-          rates_age_days: sensor.attributes.rates_age_days || 0,
-        };
-      }
+  _loadFromEntities() {
+    if (!this._hass) return;
 
-      // Try to get options from the entity
-      const configEntity = Object.keys(this._hass.states).find(
-        id => id.startsWith('sensor.taipower_') && !id.endsWith('_rate_status') && !id.endsWith('_kwh_cost')
-      );
-      if (configEntity) {
-        const ent = this._hass.states[configEntity];
-        this._options = {
-          bimonthly_energy: ent.attributes.bimonthly_energy || '',
-          billing_mode: ent.attributes.billing_mode || 'residential',
-          meter_start_day: ent.attributes.meter_start_day || '',
-          manual_rates: ent.attributes.manual_rates || null,
-        };
-      }
-
-      this._loading = false;
-      this.render();
-    } catch (e) {
-      this._error = e.message;
-      this._loading = false;
-      this.render();
+    // Find rate status sensor
+    const statusSensor = Object.keys(this._hass.states).find(
+      id => id.startsWith('sensor.taipower_') && id.endsWith('_rate_status')
+    );
+    if (statusSensor) {
+      const sensor = this._hass.states[statusSensor];
+      this._rates = {
+        pdf_version: sensor.attributes.pdf_version || 'unknown',
+        rates_version: sensor.attributes.rates_version || 'unknown',
+        manual_override: sensor.attributes.manual_override || false,
+        rates_age_days: sensor.attributes.rates_age_days ?? 'unknown',
+      };
     }
+
+    // Find cost sensor to get config attributes
+    const costSensor = Object.keys(this._hass.states).find(
+      id => id.startsWith('sensor.taipower_') && id.endsWith('_energy_cost')
+    );
+    const kwhSensor = Object.keys(this._hass.states).find(
+      id => id.startsWith('sensor.taipower_') && id.endsWith('_kwh_cost')
+    );
+    const refSensor = costSensor || kwhSensor;
+    if (refSensor) {
+      const ent = this._hass.states[refSensor];
+      this._options = {
+        bimonthly_energy: ent.attributes.bimonthly_energy || '',
+        billing_mode: ent.attributes.billing_mode || 'residential',
+        meter_start_day: ent.attributes.meter_start_day || '',
+        manual_rates: ent.attributes.manual_rates || null,
+      };
+    }
+
+    this._loading = false;
+    this.render();
   }
 
   _getDefaultRates(mode) {
@@ -114,14 +115,17 @@ class TaiPowerConfigCard extends HTMLElement {
     this._success = null;
     this.render();
 
-    const form = this.shadowRoot?.querySelector('#taipower-form') || this.querySelector('#taipower-form');
+    const form = this.querySelector('#taipower-form');
     if (!form) { this._saving = false; return; }
 
     const data = new FormData(form);
     const body = {};
-    if (data.get('bimonthly_energy')) body.bimonthly_energy = data.get('bimonthly_energy');
-    if (data.get('billing_mode')) body.billing_mode = data.get('billing_mode');
-    if (data.get('meter_start_day')) body.meter_start_day = data.get('meter_start_day');
+    const energyVal = data.get('bimonthly_energy');
+    if (energyVal) body.bimonthly_energy = energyVal;
+    const modeVal = data.get('billing_mode');
+    if (modeVal) body.billing_mode = modeVal;
+    const dayVal = data.get('meter_start_day');
+    if (dayVal) body.meter_start_day = dayVal;
 
     const manualRatesStr = (data.get('manual_rates') || '').trim();
     if (manualRatesStr) {
@@ -140,7 +144,9 @@ class TaiPowerConfigCard extends HTMLElement {
     try {
       await this._hass.callService('taipower_bimonthly_cost', 'update_config', body);
       this._success = '設定已更新！';
-      await this._loadConfig();
+      setTimeout(() => {
+        this._loadFromEntities();
+      }, 1500);
     } catch (err) {
       this._error = '儲存失敗: ' + err.message;
     }
@@ -149,80 +155,71 @@ class TaiPowerConfigCard extends HTMLElement {
   }
 
   _buildRateTable(mode, manualRates) {
-    let rates, thresholds;
-    if (manualRates && manualRates[mode]) {
+    let rateData;
+    const isManual = manualRates && manualRates[mode];
+    if (isManual) {
       const mr = manualRates[mode];
-      rates = { summer: mr.summer, non_summer: mr.non_summer };
-      thresholds = mr.summer.map((_, i) => {
-        if (i === 0) return 120;
-        if (i === mr.summer.length - 1) return '∞';
-        return [120, 330, 500, 700, 1000, 1500, 3000][i] || '—';
-      });
+      rateData = {
+        summer: mr.summer,
+        non_summer: mr.non_summer,
+        thresholds: mr.summer.map((_, i) => {
+          if (i === mr.summer.length - 1) return '∞';
+          const defThresholds = [120, 330, 500, 700, 1000, 1500, 3000];
+          return defThresholds[i] || '—';
+        }),
+      };
     } else {
-      const def = this._getDefaultRates(mode);
-      rates = { summer: def.summer, non_summer: def.non_summer };
-      rates = def;
-      thresholds = def.thresholds;
+      rateData = this._getDefaultRates(mode);
     }
 
     const modeNames = { residential: '住宅用', non_commercial: '非營業用', commercial: '營業用' };
-    const isManual = manualRates && manualRates[mode];
     const now = new Date();
     const isSummer = (now.getMonth() + 1 >= 6 && now.getMonth() + 1 <= 9);
 
     let html = `
       <div class="rate-section">
-        <h3>📊 目前費率表 — ${modeNames[mode] || mode} ${isManual ? '<span class="badge-manual">手動覆蓋</span>' : '<span class="badge-default">預設費率</span>'}</h3>
-        <div class="season-label">當前季節：<strong>${isSummer ? '☀️ 夏季 (6/1-9/30)' : '❄️ 非夏季'}</strong></div>
+        <h3>📊 目前費率表 — ${modeNames[mode] || mode} ${isManual ? '<span class="badge badge-manual">手動覆蓋</span>' : '<span class="badge badge-default">預設費率</span>'}</h3>
+        <div class="season-label">當前季節：<strong>${isSummer ? '☀️ 夏季 (6/1~9/30)' : '❄️ 非夏季'}</strong></div>
         <table class="rate-table">
-          <thead>
-            <tr>
-              <th>級距 (kWh)</th>
-              <th>費率 (TWD/kWh)</th>
-            </tr>
-          </thead>
+          <thead><tr><th>級距 (kWh)</th><th>夏季費率</th><th>非夏季費率</th><th>當前</th></tr></thead>
           <tbody>
     `;
 
-    const tierCount = (rates.summer || rates).length;
+    const tierCount = rateData.summer.length;
     for (let i = 0; i < tierCount; i++) {
-      const summerRate = (rates.summer || [])[i];
-      const nonSummerRate = (rates.non_summer || [])[i];
-      const threshold = thresholds[i] || '∞';
-      const prevThreshold = i > 0 ? (thresholds[i - 1] || 0) : 0;
-      const label = i === 0
-        ? `0 ~ ${threshold}`
-        : `${prevThreshold} ~ ${threshold}`;
-      const rate = isSummer ? summerRate : nonSummerRate;
-      const highlight = isSummer ? ' class="highlight"' : '';
+      const sr = rateData.summer[i];
+      const nsr = rateData.non_summer[i];
+      const thr = rateData.thresholds[i];
+      const prevThr = i > 0 ? rateData.thresholds[i - 1] : 0;
+      const label = i === 0 ? `0 ~ ${thr}` : `${prevThr} ~ ${thr}`;
+      const currentRate = isSummer ? sr : nsr;
+      const otherRate = isSummer ? nsr : sr;
       html += `
         <tr>
           <td>${label}</td>
-          <td${highlight}>${rate}</td>
+          <td class="${isSummer ? 'highlight' : ''}">${sr}</td>
+          <td class="${!isSummer ? 'highlight' : ''}">${nsr}</td>
+          <td class="current-rate"><strong>${currentRate}</strong></td>
         </tr>
       `;
     }
 
-    html += `
-          </tbody>
-        </table>
-      </div>
-    `;
+    html += `</tbody></table></div>`;
     return html;
   }
 
   render() {
+    if (!this._hass) return;
+
     const mode = this._options.billing_mode || 'residential';
     const manualRates = this._options.manual_rates;
     const rateTable = this._buildRateTable(mode, manualRates);
     const modeNames = { residential: '住宅用', non_commercial: '非營業用', commercial: '營業用' };
-    const now = new Date();
-    const isSummer = (now.getMonth() + 1 >= 6 && now.getMonth() + 1 <= 9);
 
     this.innerHTML = `
       <ha-card header="⚡ 台電二段式電價設定">
         <div class="card-content">
-          ${this._loading ? '<p>載入中...</p>' : ''}
+          ${this._loading ? '<div class="loading">載入中...</div>' : ''}
 
           ${this._error ? `<div class="msg error">❌ ${this._error}</div>` : ''}
           ${this._success ? `<div class="msg success">✅ ${this._success}</div>` : ''}
@@ -250,18 +247,16 @@ class TaiPowerConfigCard extends HTMLElement {
               <input type="date" name="meter_start_day" value="${this._options.meter_start_day || ''}"/>
             </div>
             <div class="field">
-              <label>手動費率覆蓋 (JSON，留空使用預設費率)</label>
-              <textarea name="manual_rates" rows="4" placeholder='{"residential":{"summer":[1.78,2.55,3.80,5.14,6.44,8.86],"non_summer":[1.78,2.26,3.13,4.24,5.27,7.03]}}'>${manualRates ? JSON.stringify(manualRates, null, 2) : ''}</textarea>
+              <label>手動費率覆蓋 (JSON，留空使用預設)</label>
+              <textarea name="manual_rates" rows="3" placeholder='{"residential":{"summer":[1.78,2.55,3.80,5.14,6.44,8.86],"non_summer":[1.78,2.26,3.13,4.24,5.27,7.03]}}'>${manualRates ? JSON.stringify(manualRates, null, 2) : ''}</textarea>
             </div>
             <div class="actions">
               <button type="submit" ${this._saving ? 'disabled' : ''}>${this._saving ? '儲存中...' : '💾 儲存設定'}</button>
             </div>
           </form>
 
-          <hr/>
           <div class="info">
-            <p>費率版本：${this._rates?.rates_version || 'unknown'} | PDF：${this._rates?.pdf_version || 'unknown'}</p>
-            <p>費率資料距今：${this._rates?.rates_age_days ?? 'unknown'} 天</p>
+            <p>費率版本：${this._rates?.rates_version || '—'} | 資料距今：${this._rates?.rates_age_days ?? '—'} 天 ${this._rates?.manual_override ? '<span class="badge badge-manual">手動覆蓋中</span>' : ''}</p>
           </div>
         </div>
       </ha-card>
@@ -270,29 +265,34 @@ class TaiPowerConfigCard extends HTMLElement {
     // Apply styles
     const style = document.createElement('style');
     style.textContent = `
-      .card-content { padding: 16px; }
+      :host { display: block; }
+      .card-content { padding: 16px; font-family: var(--ha-font-family); }
       h3 { margin: 16px 0 8px; font-size: 1.1em; }
-      hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+      hr { border: none; border-top: 1px solid var(--divider-color, #e0e0e0); margin: 16px 0; }
+      .loading { text-align: center; padding: 20px; color: var(--secondary-text-color); }
       .rate-section { margin-bottom: 8px; }
-      .season-label { margin-bottom: 8px; color: #666; font-size: 0.9em; }
-      .rate-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-      .rate-table th, .rate-table td { padding: 6px 12px; border: 1px solid #e0e0e0; text-align: left; }
-      .rate-table th { background: #f5f5f5; font-weight: 600; }
+      .season-label { margin-bottom: 8px; color: var(--secondary-text-color, #666); font-size: 0.9em; }
+      .rate-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 0.9em; }
+      .rate-table th, .rate-table td { padding: 6px 10px; border: 1px solid var(--divider-color, #e0e0e0); text-align: center; }
+      .rate-table th { background: var(--card-background-color, #f5f5f5); font-weight: 600; }
+      .rate-table td:first-child { text-align: left; }
       .rate-table td.highlight { background: #fff3e0; font-weight: 600; }
-      .badge-manual { display: inline-block; background: #ff9800; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; vertical-align: middle; }
-      .badge-default { display: inline-block; background: #4caf50; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; vertical-align: middle; }
+      .rate-table td.current-rate { background: #e8f5e9; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; vertical-align: middle; color: #fff; }
+      .badge-manual { background: #ff9800; }
+      .badge-default { background: #4caf50; }
       .field { margin-bottom: 12px; }
       .field label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 0.9em; }
-      .field input, .field select, .field textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+      .field input, .field select, .field textarea { width: 100%; padding: 8px; border: 1px solid var(--divider-color, #ccc); border-radius: 4px; font-size: 14px; box-sizing: border-box; background: var(--card-background-color, #fff); color: var(--primary-text-color); }
       .field textarea { font-family: monospace; resize: vertical; }
       .actions { margin-top: 16px; }
-      .actions button { background: #2196f3; color: #fff; border: none; padding: 10px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-      .actions button:hover { background: #1976d2; }
-      .actions button:disabled { background: #ccc; cursor: not-allowed; }
+      .actions button { background: var(--primary-color, #2196f3); color: #fff; border: none; padding: 10px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+      .actions button:hover { opacity: 0.9; }
+      .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
       .msg { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; }
       .msg.error { background: #ffebee; color: #c62828; }
       .msg.success { background: #e8f5e9; color: #2e7d32; }
-      .info { font-size: 0.85em; color: #888; }
+      .info { font-size: 0.85em; color: var(--secondary-text-color, #888); margin-top: 12px; }
       .info p { margin: 2px 0; }
     `;
     this.appendChild(style);
@@ -311,11 +311,10 @@ class TaiPowerConfigCard extends HTMLElement {
 
 customElements.define('taipower-config-card', TaiPowerConfigCard);
 
-// Lovelace registration
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'taipower-config-card',
   name: '台電二段式電價設定',
-  description: 'TaiPower 設定卡片：顯示費率表、編輯設定',
+  description: 'TaiPower 費率表 + 設定卡片',
   preview: true,
 });

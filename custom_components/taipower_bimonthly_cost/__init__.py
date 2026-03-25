@@ -1,7 +1,10 @@
 """The TaiPower Energy Cost integration."""
 import asyncio
+import json
 import logging
 import os
+import shutil
+from pathlib import Path
 
 import voluptuous as vol
 
@@ -28,27 +31,106 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+# ── Card paths ──────────────────────────────────────────────────────────────
+_CARD_SRC_NAME = "taipower-config-card.js"
+_CARD_DIR_NAME = "taipower"
+_CARD_JS_URL = "/taipower_static/taipower-config-card.js"
+
+
+def _get_card_src(hass: HomeAssistant) -> Path:
+    """Path to bundled JS in integration package."""
+    return Path(__file__).parent / "dist" / _CARD_SRC_NAME
+
+
+def _get_card_dst(hass: HomeAssistant) -> Path:
+    """Target path in HA www/ (served via /local/)."""
+    return Path(hass.config.config_dir) / "www" / _CARD_DIR_NAME / _CARD_SRC_NAME
+
+
+def _install_card_js(hass: HomeAssistant) -> bool:
+    """Copy JS to www/ for persistence. Returns True if successful."""
+    src = _get_card_src(hass)
+    dst = _get_card_dst(hass)
+
+    if not src.exists():
+        _LOGGER.warning("TaiPower card JS not found at %s", src)
+        return False
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    _LOGGER.info("TaiPower card JS installed to %s", dst)
+    return True
+
+
+def _get_resources_path(hass: HomeAssistant) -> Path:
+    return Path(hass.config.config_dir) / ".storage" / "lovelace_resources"
+
+
+def _get_card_js_url(hass: HomeAssistant) -> str:
+    """Return card JS URL with mtime-based cache busting."""
+    dst = _get_card_dst(hass)
+    try:
+        mtime = int(dst.stat().st_mtime)
+    except (FileNotFoundError, OSError):
+        mtime = 0
+    return f"/local/{_CARD_DIR_NAME}/{_CARD_SRC_NAME}?v={mtime}"
+
+
+def _register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Register card resource in lovelace_resources (idempotent, cache-busted)."""
+    res_path = _get_resources_path(hass)
+    url = _get_card_js_url(hass)
+
+    try:
+        with open(res_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {"data": {"resources": [], "items": []}, "key": "lovelace_resources"}
+
+    for arr_name in ("resources", "items"):
+        arr = data.get("data", {}).get(arr_name, [])
+        existing = [r for r in arr if _CARD_DIR_NAME in r.get("url", "")]
+        if existing:
+            for r in existing:
+                r["url"] = url
+        else:
+            arr.append({"url": url, "type": "module"})
+
+    data["data"]["resources"] = data.get("data", {}).get("resources", [])
+    data["data"]["items"] = data.get("data", {}).get("items", [])
+    try:
+        with open(res_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        _LOGGER.info("Registered TaiPower card in lovelace_resources: %s", url)
+    except OSError as err:
+        _LOGGER.warning("Failed to write lovelace_resources: %s", err)
+
 
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the TaiPower component."""
     hass.data.setdefault(DOMAIN, {})
 
-    # Register static path for config card + Lovelace resource
-    card_path = os.path.join(os.path.dirname(__file__), "dist")
-    card_file = os.path.join(card_path, "taipower-config-card.js")
-    if os.path.isfile(card_file):
-        # Cache-bust with file mtime
-        mtime = int(os.path.getmtime(card_file))
-        card_url = f"/taipower_static/taipower-config-card.js?v={mtime}"
+    # Copy JS to www/ for persistence (runs every restart)
+    await hass.async_add_executor_job(_install_card_js, hass)
+
+    # Register static path so HA serves the JS file
+    src = _get_card_src(hass)
+    if src.exists():
         await hass.http.async_register_static_paths([
             StaticPathConfig(
-                card_url,
-                card_file,
+                _CARD_JS_URL,
+                str(src),
                 cache_headers=True,
             )
         ])
-        # Register as Lovelace resource so custom element loads
-        frontend.add_extra_js_url(hass, card_url)
+        # Register with frontend so Lovelace injects it as <script>
+        frontend.add_extra_js_url(hass, _get_card_js_url(hass))
+        # Also write to .storage/lovelace_resources (double insurance)
+        await hass.async_add_executor_job(_register_lovelace_resource, hass)
+        _LOGGER.info("TaiPower card registered: %s -> %s", _CARD_JS_URL, src)
+    else:
+        _LOGGER.warning("TaiPower card JS file not found: %s", src)
 
     async def handle_update_config(call):
         """Handle the update_config service call."""
@@ -65,7 +147,6 @@ async def async_setup(hass: HomeAssistant, config: dict):
             new_options[CONF_MANUAL_RATES] = call.data[CONF_MANUAL_RATES]
 
         if not entry_id:
-            # Find entry by domain
             entries = hass.config_entries.async_entries(DOMAIN)
             if entries:
                 entry = entries[0]
@@ -102,8 +183,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up a TaiPower Bimonthly Energy Cost entry."""
-
-    # migrate data (also after first setup) to options
+    # migrate data to options
     if config_entry.data:
         hass.config_entries.async_update_entry(
             config_entry, data={}, options=config_entry.data
