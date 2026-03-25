@@ -21,6 +21,13 @@
             }
         }
     },
+    "entity": {
+        "button": {
+            "update_rates": {
+                "name": "手動更新台電費率"
+            }
+        }
+    },
     "options": {
         "error": {
             "entitynotexist": "這個實體 (Entity) 不存在!!",

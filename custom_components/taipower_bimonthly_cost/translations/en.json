@@ -21,6 +21,13 @@
             }
         }
     },
+    "entity": {
+        "button": {
+            "update_rates": {
+                "name": "Update Taipower Rates"
+            }
+        }
+    },
     "options": {
         "error": {
             "entitynotexist": "The Entity is not exist!",
