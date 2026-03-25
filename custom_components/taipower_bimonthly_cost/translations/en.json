@@ -42,7 +42,7 @@
           "billing_mode": "Billing Mode",
           "manual_rates": "Manual Rates Override (JSON)"
         },
-        "description": "Modify TaiPower settings.\nManual rates example: {\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\nLeave empty to use default rates.",
+        "description": "Modify TaiPower settings. Leave empty to use default rates.\n\nManual rates JSON format:\n{\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\n\nAvailable modes: residential, non_commercial, commercial",
         "title": "TaiPower Settings"
       }
     }

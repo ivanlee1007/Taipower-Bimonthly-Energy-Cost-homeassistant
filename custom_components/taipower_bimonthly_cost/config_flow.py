@@ -171,15 +171,7 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
         """Build options schema with current values as defaults."""
         # Get current manual rates as JSON string for textarea
         manual_rates = _get_config_value(self._config_entry, CONF_MANUAL_RATES, {})
-        manual_rates_json = json.dumps(manual_rates, ensure_ascii=False) if manual_rates else ""
-
-        # Build example JSON for placeholder
-        example = {
-            "residential": {
-                "summer": [1.78, 2.55, 3.80, 5.14, 6.44, 8.86],
-                "non_summer": [1.78, 2.26, 3.13, 4.24, 5.27, 7.03]
-            }
-        }
+        manual_rates_json = json.dumps(manual_rates, ensure_ascii=False, indent=2) if manual_rates else ""
 
         return vol.Schema(
             {
@@ -203,12 +195,7 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_MANUAL_RATES,
                     default=manual_rates_json,
-                ): selector.selector({
-                    "text": {
-                        "multiline": True,
-                        "description": json.dumps(example, ensure_ascii=False),
-                    }
-                }),
+                ): str,
             }
         )
 

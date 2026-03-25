@@ -42,7 +42,7 @@
           "billing_mode": "計費模式",
           "manual_rates": "手動費率覆蓋 (JSON)"
         },
-        "description": "修改台電費率設定。\n手動費率格式範例：{\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\n留空則使用預設費率。",
+        "description": "修改台電費率設定。留空使用預設費率。\n\n手動費率 JSON 格式：\n{\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\n\n可選模式：residential(住宅)、non_commercial(非營業)、commercial(營業)",
         "title": "台電費率設定"
       }
     }
