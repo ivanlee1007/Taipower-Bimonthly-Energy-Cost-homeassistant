@@ -59,9 +59,14 @@ async def async_setup_entry(
     """Set up the energy cost sensor."""
 
     try:
+        _LOGGER.info("TaiPower sensor setup: entry_id=%s", entry.entry_id)
+        _LOGGER.info("TaiPower sensor setup: options=%s", dict(entry.options) if entry.options else None)
+        _LOGGER.info("TaiPower sensor setup: data=%s", dict(entry.data) if entry.data else None)
+
         entities = []
         # Check required config exists
         energy_entity = _get_config_value(entry, CONF_BIMONTHLY_ENERGY, "")
+        _LOGGER.info("TaiPower sensor setup: energy_entity=%r", energy_entity)
         if not energy_entity:
             _LOGGER.warning(
                 "TaiPower: missing 'bimonthly_energy' config. "
@@ -70,6 +75,7 @@ async def async_setup_entry(
             return
 
         meter_start_day = _get_config_value(entry, CONF_METER_START_DAY, "")
+        _LOGGER.info("TaiPower sensor setup: meter_start_day=%r", meter_start_day)
         if not meter_start_day:
             _LOGGER.warning(
                 "TaiPower: missing 'meter_start_day' config. "
@@ -93,9 +99,10 @@ async def async_setup_entry(
                     [RateStatusSensor(hass, merged, description, entry.entry_id)]
                 )
 
+        _LOGGER.info("TaiPower sensor setup: creating %d entities", len(entities))
         async_add_entities(entities)
-    except AttributeError as ex:
-        _LOGGER.error(ex)
+    except Exception as ex:
+        _LOGGER.error("TaiPower sensor setup error: %s", ex, exc_info=True)
 
 
 class CostSensor(SensorEntity):
