@@ -1,12 +1,12 @@
 {
   "domain": "taipower_bimonthly_cost",
   "name": "TaiPower Bimonthly Energy Cost",
-  "codeowners": ["@cnstudio", "@tsunglung"],
+  "codeowners": ["@cnstudio", "@tsunglung", "@ivanlee1007"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/cnstudio/Taipower-Bimonthly-Energy-Cost-homeassistant",
+  "documentation": "https://github.com/ivanlee1007/Taipower-Bimonthly-Energy-Cost-homeassistant",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/cnstudio/Taipower-Bimonthly-Energy-Cost-homeassistant/issues",
+  "issue_tracker": "https://github.com/ivanlee1007/Taipower-Bimonthly-Energy-Cost-homeassistant/issues",
   "requirements": [],
-  "version": "0.53.7"
+  "version": "1.0.0"
 }
