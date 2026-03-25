@@ -84,7 +84,9 @@ async def async_setup(hass: HomeAssistant, config: dict):
         if CONF_BILLING_MODE in call.data:
             new_options[CONF_BILLING_MODE] = call.data[CONF_BILLING_MODE]
         if CONF_METER_START_DAY in call.data:
-            new_options[CONF_METER_START_DAY] = call.data[CONF_METER_START_DAY]
+            val = call.data[CONF_METER_START_DAY]
+            # Ensure it's stored as a string (cv.date may return datetime.date object)
+            new_options[CONF_METER_START_DAY] = val.strftime("%Y-%m-%d") if hasattr(val, "strftime") else str(val)
         if CONF_MANUAL_RATES in call.data:
             new_options[CONF_MANUAL_RATES] = call.data[CONF_MANUAL_RATES]
 
@@ -114,7 +116,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
                 vol.Optional("entry_id"): cv.string,
                 vol.Optional(CONF_BIMONTHLY_ENERGY): cv.string,
                 vol.Optional(CONF_BILLING_MODE): vol.In(["residential", "non_commercial", "commercial"]),
-                vol.Optional(CONF_METER_START_DAY): cv.date,
+                vol.Optional(CONF_METER_START_DAY): cv.string,  # Keep as string, not cv.date
                 vol.Optional(CONF_MANUAL_RATES): vol.Any(None, dict),
             }
         ),
