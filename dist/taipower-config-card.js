@@ -18,7 +18,7 @@ class TaiPowerConfigCard extends HTMLElement {
     this._error = null;
     this._domReady = false;
     this._userEditing = false;
-    this._version = "1.5.1";
+    this._version = "1.5.3";
   }
 
   setConfig(config) {
