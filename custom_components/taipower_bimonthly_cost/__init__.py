@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     CONF_BIMONTHLY_ENERGY,
     CONF_BILLING_MODE,
+    CONF_MANUAL_RATES,
     CONF_METER_START_DAY,
     DEFAULT_BILLING_MODE,
     DOMAIN,
@@ -60,6 +61,8 @@ async def async_setup(hass: HomeAssistant, config: dict):
             new_options[CONF_BILLING_MODE] = call.data[CONF_BILLING_MODE]
         if CONF_METER_START_DAY in call.data:
             new_options[CONF_METER_START_DAY] = call.data[CONF_METER_START_DAY]
+        if CONF_MANUAL_RATES in call.data:
+            new_options[CONF_MANUAL_RATES] = call.data[CONF_MANUAL_RATES]
 
         if not entry_id:
             # Find entry by domain
@@ -89,6 +92,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
                 vol.Optional(CONF_BIMONTHLY_ENERGY): cv.string,
                 vol.Optional(CONF_BILLING_MODE): vol.In(["residential", "non_commercial", "commercial"]),
                 vol.Optional(CONF_METER_START_DAY): cv.date,
+                vol.Optional(CONF_MANUAL_RATES): vol.Any(None, dict),
             }
         ),
     )

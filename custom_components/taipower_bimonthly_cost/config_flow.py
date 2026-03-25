@@ -1,4 +1,5 @@
 """Config flow for TaiPower Energy Cost integration."""
+import json
 import logging
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from .const import (
     CONF_BIMONTHLY_ENERGY,
     CONF_METER_START_DAY,
     CONF_BILLING_MODE,
+    CONF_MANUAL_RATES,
     DOMAIN,
     BILLING_MODES,
     DEFAULT_BILLING_MODE,
@@ -107,18 +109,54 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                 if state is None:
                     _LOGGER.warning("Entity %s not found, allowing anyway", energy_entity)
 
+                # Validate and parse manual rates JSON
+                manual_rates = {}
+                manual_rates_str = user_input.get(CONF_MANUAL_RATES, "").strip()
+                if manual_rates_str:
+                    try:
+                        parsed = json.loads(manual_rates_str)
+                        # Validate structure
+                        if not isinstance(parsed, dict):
+                            raise ValueError("manual_rates must be a JSON object")
+                        for mode, rates in parsed.items():
+                            if mode not in BILLING_MODES:
+                                raise ValueError(f"Unknown billing mode: {mode}")
+                            if not isinstance(rates, dict):
+                                raise ValueError(f"Rates for {mode} must be an object with 'summer' and 'non_summer' arrays")
+                            summer = rates.get("summer", [])
+                            non_summer = rates.get("non_summer", [])
+                            if not isinstance(summer, list) or not isinstance(non_summer, list):
+                                raise ValueError(f"summer and non_summer must be arrays")
+                            if len(summer) != len(non_summer):
+                                raise ValueError(f"summer and non_summer must have same length")
+                            if len(summer) < 1:
+                                raise ValueError(f"Rates must have at least 1 tier")
+                            # Validate all are numbers
+                            for i, (s, ns) in enumerate(zip(summer, non_summer)):
+                                try:
+                                    float(s)
+                                    float(ns)
+                                except (ValueError, TypeError):
+                                    raise ValueError(f"Tier {i+1} rates must be numbers")
+                        manual_rates = parsed
+                    except json.JSONDecodeError as e:
+                        raise ValueError(f"Invalid JSON: {e}")
+
                 # Build new options from user input
                 new_options = {
                     CONF_BIMONTHLY_ENERGY: energy_entity,
                     CONF_BILLING_MODE: user_input.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
                     CONF_METER_START_DAY: user_input.get(CONF_METER_START_DAY, ""),
                 }
-                new_data = {}
+                if manual_rates:
+                    new_options[CONF_MANUAL_RATES] = manual_rates
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data, options=new_options,
+                    self._config_entry, data={}, options=new_options,
                 )
                 return self.async_create_entry(title="", data={})
+            except ValueError as e:
+                errors[CONF_MANUAL_RATES] = str(e)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception in options flow")
                 errors["base"] = "unknown"
@@ -131,6 +169,18 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
 
     def _get_options_schema(self):
         """Build options schema with current values as defaults."""
+        # Get current manual rates as JSON string for textarea
+        manual_rates = _get_config_value(self._config_entry, CONF_MANUAL_RATES, {})
+        manual_rates_json = json.dumps(manual_rates, ensure_ascii=False) if manual_rates else ""
+
+        # Build example JSON for placeholder
+        example = {
+            "residential": {
+                "summer": [1.78, 2.55, 3.80, 5.14, 6.44, 8.86],
+                "non_summer": [1.78, 2.26, 3.13, 4.24, 5.27, 7.03]
+            }
+        }
+
         return vol.Schema(
             {
                 vol.Required(
@@ -150,6 +200,15 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                         for k, v in BILLING_MODES.items()
                     ]}},
                 ),
+                vol.Optional(
+                    CONF_MANUAL_RATES,
+                    default=manual_rates_json,
+                ): selector.selector({
+                    "text": {
+                        "multiline": True,
+                        "description": json.dumps(example, ensure_ascii=False),
+                    }
+                }),
             }
         )
 

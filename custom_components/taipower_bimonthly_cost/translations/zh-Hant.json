@@ -31,16 +31,18 @@
     "error": {
       "entitynotexist": "這個實體 (Entity) 不存在!!",
       "dataformaterror": "日期格式不正確",
-      "unknown": "未預期錯誤"
+      "unknown": "未預期錯誤",
+      "manual_rates": "費率 JSON 格式錯誤"
     },
     "step": {
       "init": {
         "data": {
           "bimonthly_energy": "雙月計量電源實體 (Entity)",
           "meter_start_day": "電錶抄表日",
-          "billing_mode": "計費模式"
+          "billing_mode": "計費模式",
+          "manual_rates": "手動費率覆蓋 (JSON)"
         },
-        "description": "修改台電費率設定",
+        "description": "修改台電費率設定。\n手動費率格式範例：{\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\n留空則使用預設費率。",
         "title": "台電費率設定"
       }
     }
@@ -48,7 +50,7 @@
   "services": {
     "update_config": {
       "name": "更新台電費率設定",
-      "description": "更新台電二段式電價整合的設定（感測器、計費模式、抄表日）",
+      "description": "更新台電二段式電價整合的設定（感測器、計費模式、抄表日、手動費率）",
       "fields": {
         "bimonthly_energy": {
           "name": "累計電量感測器",
@@ -61,6 +63,10 @@
         "meter_start_day": {
           "name": "抄表起始日",
           "description": "電錶抄表起始日期"
+        },
+        "manual_rates": {
+          "name": "手動費率覆蓋",
+          "description": "JSON 格式的自訂費率，例如 {\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}"
         }
       }
     }

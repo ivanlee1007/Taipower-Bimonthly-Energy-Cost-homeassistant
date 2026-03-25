@@ -31,16 +31,18 @@
     "error": {
       "entitynotexist": "The Entity does not exist!",
       "dataformaterror": "Incorrect data format",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "manual_rates": "Invalid JSON format for rates"
     },
     "step": {
       "init": {
         "data": {
           "bimonthly_energy": "Bimonthly Energy Entity",
           "meter_start_day": "Meter Start Day",
-          "billing_mode": "Billing Mode"
+          "billing_mode": "Billing Mode",
+          "manual_rates": "Manual Rates Override (JSON)"
         },
-        "description": "Modify TaiPower settings",
+        "description": "Modify TaiPower settings.\nManual rates example: {\"residential\":{\"summer\":[1.78,2.55,3.80,5.14,6.44,8.86],\"non_summer\":[1.78,2.26,3.13,4.24,5.27,7.03]}}\nLeave empty to use default rates.",
         "title": "TaiPower Settings"
       }
     }
