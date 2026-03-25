@@ -6,6 +6,8 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_BIMONTHLY_ENERGY,
+    CONF_BILLING_MODE,
+    DEFAULT_BILLING_MODE,
     DOMAIN,
     PLATFORMS
 )
@@ -21,7 +23,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
     data = hass.data.setdefault(DOMAIN, {})
     data[config_entry.entry_id] = {
-        CONF_BIMONTHLY_ENERGY: _get_config_value(config_entry, CONF_BIMONTHLY_ENERGY, "")
+        CONF_BIMONTHLY_ENERGY: _get_config_value(config_entry, CONF_BIMONTHLY_ENERGY, ""),
+        CONF_BILLING_MODE: _get_config_value(config_entry, CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
     }
     # Original setup command
     # for platform in PLATFORMS:

@@ -13,12 +13,18 @@ from .const import (
     ATTR_KWH_COST,
     ATTR_START_DAY,
     ATTR_USED_DAYS,
+    ATTR_BILLING_MODE,
+    ATTR_PDF_VERSION,
     CONF_BIMONTHLY_ENERGY,
     CONF_METER_START_DAY,
+    CONF_BILLING_MODE,
     DOMAIN,
     UNIT_KWH_COST,
     COST_SENSORS,
-    TaiPowerCostSensorDescription
+    DEFAULT_BILLING_MODE,
+    BILLING_MODES,
+    TaiPowerCostSensorDescription,
+    calculate_cost,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +60,7 @@ class CostSensor(SensorEntity):
         self._hass = hass
         self._energy_entity = entry_data[CONF_BIMONTHLY_ENERGY]
         self._kwh_cost = None
+        self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
 
     @property
     def name(self):
@@ -83,40 +90,6 @@ class CostSensor(SensorEntity):
 class KwhCostSensor(CostSensor):
     """Implementation of a energy cost sensor."""
 
-    def non_time_summer(self, kwh):
-        """ return twd/kwh for non time and in summer """
-        kwh_cost = None
-        if kwh < 240.0:
-            kwh_cost = 1.68
-        elif 240.0 <= kwh <= 660.0:
-            kwh_cost = 2.45
-        elif 660.0 <= kwh < 1000.0:
-            kwh_cost = 3.7
-        elif 1000.0 <= kwh < 1400.0:
-            kwh_cost = 5.04
-        elif 1400.0 <= kwh < 2000.0:
-            kwh_cost = 6.24
-        elif kwh >= 2000.0:
-            kwh_cost = 8.46
-        self._kwh_cost = kwh_cost
-
-    def non_time_not_summer(self, kwh):
-        """ return twd/kwh for non time and not in summer """
-        kwh_cost = None
-        if kwh < 240.0:
-            kwh_cost = 1.68
-        elif 240.0 <= kwh <= 660.0:
-            kwh_cost = 2.16
-        elif 660.0 <= kwh < 1000.0:
-            kwh_cost = 3.03
-        elif 1000.0 <= kwh < 1400.0:
-            kwh_cost = 4.14
-        elif 1400.0 <= kwh < 2000.0:
-            kwh_cost = 5.07
-        elif kwh >= 2000.0:
-            kwh_cost = 6.63
-        self._kwh_cost = kwh_cost
-
     @property
     def native_value(self):
         """Return the state of the sensor."""
@@ -127,10 +100,9 @@ class KwhCostSensor(CostSensor):
             if state == "unknown":
                 return None
             if isinstance(state, (float, int, str)):
-                if now.month in [6, 7, 8, 9]:
-                    self.non_time_summer(float(state))
-                else:
-                    self.non_time_not_summer(float(state))
+                is_summer = now.month in [6, 7, 8, 9]
+                _, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer)
+                self._kwh_cost = avg_cost
         return self._kwh_cost
 
 
@@ -150,40 +122,6 @@ class EnergyCostSensor(KwhCostSensor):
         await self._hass.services.async_call(
             'utility_meter', 'calibrate', service_data)
 
-    def non_time_summer_cost(self, kwh):
-        """ return cost for non time and in summer """
-        value = None
-        if kwh < 240.0:
-            value = kwh * self._kwh_cost
-        elif 240.0 <= kwh <= 660.0:
-            value = ((kwh - 240.0) * self._kwh_cost) + 403.2
-        elif 660.0 <= kwh < 1000.0:
-            value = ((kwh - 660.0) * self._kwh_cost) + 1432.2
-        elif 1000.0 <= kwh < 1400.0:
-            value = ((kwh - 1000.0) * self._kwh_cost) + 2690.2
-        elif 1400.0 <= kwh < 2000.0:
-            value = ((kwh - 1400.0) * self._kwh_cost) + 4706.2
-        elif kwh >= 2000.0:
-            value = ((kwh - 2000.0) * self._kwh_cost) + 8450.2
-        return value
-
-    def non_time_not_summer_cost(self, kwh):
-        """ return cost for non time and notin summer """
-        value = None
-        if kwh < 240.0:
-            value = kwh * self._kwh_cost
-        elif 240.0 <= kwh <= 660.0:
-            value = ((kwh - 240.0) * self._kwh_cost) + 403.2
-        elif 660.0 <= kwh < 1000.0:
-            value = ((kwh - 660.0) * self._kwh_cost) + 1310.4
-        elif 1000.0 <= kwh < 1400.0:
-            value = ((kwh - 1000.0) * self._kwh_cost) + 2340.6
-        elif 1400.0 <= kwh < 2000.0:
-            value = ((kwh - 1400.0) * self._kwh_cost) + 3996.6
-        elif kwh >= 2000.0:
-            value = ((kwh - 2000.0) * self._kwh_cost) + 7038.6
-        return value
-
     @property
     def native_value(self):
         """Return the state of the sensor."""
@@ -195,14 +133,10 @@ class EnergyCostSensor(KwhCostSensor):
             if state == "unknown":
                 return None
             if isinstance(state, (float, int, str)):
-                if now.month in [6, 7, 8, 9]:
-                    self.non_time_summer(float(state))
-                else:
-                    self.non_time_not_summer(float(state))
-                if now.month in [6, 7, 8, 9] and self._kwh_cost:
-                    value = self.non_time_summer_cost(float(state))
-                elif self._kwh_cost:
-                    value = self.non_time_not_summer_cost(float(state))
+                is_summer = now.month in [6, 7, 8, 9]
+                total_cost, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer)
+                self._kwh_cost = avg_cost
+                value = total_cost
         if ((now - self._reset_day).days % 60) == 59:
             if now.hour == 23 and now.minute == 59 and 0 < now.second <= 59:
                 if (self._hass.states.get(self._energy_entity) and
@@ -214,11 +148,14 @@ class EnergyCostSensor(KwhCostSensor):
     def extra_state_attributes(self):
         """Return the state attributes of the device."""
         now = datetime.now()
+        mode_info = BILLING_MODES.get(self._billing_mode, {})
         return {
             ATTR_BIMONTHLY_ENERGY: self._energy_entity,
             ATTR_KWH_COST: "{} {}".format(self._kwh_cost, UNIT_KWH_COST),
             ATTR_START_DAY: self._reset_day,
             ATTR_USED_DAYS: (now - self._reset_day).days % 60,
+            ATTR_BILLING_MODE: self._billing_mode,
+            ATTR_PDF_VERSION: mode_info.get("pdf_version", "unknown"),
         }
 
     async def async_added_to_hass(self):

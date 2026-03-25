@@ -13,7 +13,10 @@ from .const import (
     CONFIG_FLOW_VERSION,
     CONF_BIMONTHLY_ENERGY,
     CONF_METER_START_DAY,
-    DOMAIN
+    CONF_BILLING_MODE,
+    DOMAIN,
+    BILLING_MODES,
+    DEFAULT_BILLING_MODE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,7 +82,16 @@ class TaiPowerCostFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_METER_START_DAY,
                     default=lambda: datetime.now().strftime("%Y-%m-%d")): selector.selector(
                         {"date": {}},
-                    )
+                    ),
+                vol.Required(
+                    CONF_BILLING_MODE,
+                    default=DEFAULT_BILLING_MODE,
+                ): selector.selector(
+                    {"select": {"options": [
+                        {"value": k, "label": v["name"]}
+                        for k, v in BILLING_MODES.items()
+                    ]}},
+                ),
             }
         )
 
@@ -128,7 +140,20 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                     {"entity": {"domain": "sensor"}},
                 ),
                 vol.Required(
-                    CONF_METER_START_DAY): selector.selector({"date": {}}),
+                    CONF_METER_START_DAY,
+                    default=_get_config_value(
+                        self.config_entry, CONF_METER_START_DAY, ""),
+                ): selector.selector({"date": {}}),
+                vol.Required(
+                    CONF_BILLING_MODE,
+                    default=_get_config_value(
+                        self.config_entry, CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
+                ): selector.selector(
+                    {"select": {"options": [
+                        {"value": k, "label": v["name"]}
+                        for k, v in BILLING_MODES.items()
+                    ]}},
+                ),
             }
         )
 

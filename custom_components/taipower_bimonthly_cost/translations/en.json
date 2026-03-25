@@ -12,10 +12,11 @@
             "user": {
                 "data": {
                     "bimonthly_energy": "Bimonthly Energy Entity",
-                    "meter_start_day": "Meter Start Day"
+                    "meter_start_day": "Meter Start Day",
+                    "billing_mode": "Billing Mode"
                 },
-                "description": "Please enter reset days and energy entity",
-                "title": "Choose the energy entity and reset days"
+                "description": "Please enter reset days, energy entity, and billing mode",
+                "title": "Choose the energy entity, reset days, and billing mode"
             }
         }
     },
@@ -24,7 +25,8 @@
             "init": {
                 "data": {
                     "bimonthly_energy": "Bimonthly Energy Entity",
-                    "meter_start_day": "Meter Start Day"
+                    "meter_start_day": "Meter Start Day",
+                    "billing_mode": "Billing Mode"
                 }
             }
         }
