@@ -152,7 +152,7 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                     new_options[CONF_MANUAL_RATES] = manual_rates
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry, data={}, options=new_options,
+                    self._config_entry, options=new_options,
                 )
                 return self.async_create_entry(title="", data={})
             except ValueError as e:
