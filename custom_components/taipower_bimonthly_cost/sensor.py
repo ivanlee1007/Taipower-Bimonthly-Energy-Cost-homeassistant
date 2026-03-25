@@ -7,6 +7,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
     ATTR_BIMONTHLY_ENERGY,
@@ -48,34 +49,45 @@ async def async_setup_entry(
         for description in COST_SENSORS:
             if description.key == "kwh_cost":
                 entities.extend(
-                    [KwhCostSensor(hass, entry.options, description)]
+                    [KwhCostSensor(hass, entry.options, description, entry.entry_id)]
                 )
             if description.key == "power_cost":
                 entities.extend(
-                    [EnergyCostSensor(hass, entry.options, description)]
+                    [EnergyCostSensor(hass, entry.options, description, entry.entry_id)]
                 )
             if description.key == "rate_status":
                 # Merge data + options so RateStatusSensor can see manual_rates
                 merged = {**entry.data, **entry.options}
                 entities.extend(
-                    [RateStatusSensor(hass, merged, description)]
+                    [RateStatusSensor(hass, merged, description, entry.entry_id)]
                 )
 
         async_add_entities(entities)
     except AttributeError as ex:
         _LOGGER.error(ex)
 
+
 class CostSensor(SensorEntity):
     """Implementation of a energy cost sensor."""
     entity_description: TaiPowerCostSensorDescription
 
-    def __init__(self, hass, entry_data, description):
+    def __init__(self, hass, entry_data, description, entry_id=None):
         self.entity_description = description
         self._hass = hass
         self._energy_entity = entry_data[CONF_BIMONTHLY_ENERGY]
         self._kwh_cost = None
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
         self._entry_data = entry_data  # keep for manual rates lookup
+        self._entry_id = entry_id
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry_id)},
+            name="台電雙月電費",
+            manufacturer="UNiNUS",
+            model="TaiPower Cost Calculator",
+        )
 
     @property
     def name(self):
@@ -124,8 +136,8 @@ class KwhCostSensor(CostSensor):
 
 class EnergyCostSensor(KwhCostSensor):
     """Implementation of a energy cost sensor."""
-    def __init__(self, hass, entry_data, description):
-        super().__init__(hass, entry_data, description)
+    def __init__(self, hass, entry_data, description, entry_id=None):
+        super().__init__(hass, entry_data, description, entry_id)
         self._reset_day = entry_data[CONF_METER_START_DAY]
 
     async def reset_utility_meter(self, sensor):
@@ -206,14 +218,24 @@ class RateStatusSensor(SensorEntity):
         "no_info": "ℹ️ 尚未驗證",
     }
 
-    def __init__(self, hass, entry_data, description):
+    def __init__(self, hass, entry_data, description, entry_id=None):
         self.entity_description = description
         self._hass = hass
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
         self._energy_entity = entry_data.get(CONF_BIMONTHLY_ENERGY, "")
         self._entry_data = entry_data  # for manual override detection
+        self._entry_id = entry_id
         self._status = "no_info"
         self._details = {"_entry_data": entry_data}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry_id)},
+            name="台電雙月電費",
+            manufacturer="UNiNUS",
+            model="TaiPower Cost Calculator",
+        )
 
     @property
     def name(self):
