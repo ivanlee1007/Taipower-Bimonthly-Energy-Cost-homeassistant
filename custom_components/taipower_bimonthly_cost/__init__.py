@@ -133,6 +133,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
             config_entry, data={}, options=config_entry.data
         )
 
+    # Auto-reload when Options flow changes config
+    config_entry.async_on_unload(
+        config_entry.add_update_listener(_async_options_updated)
+    )
+
     data = hass.data.setdefault(DOMAIN, {})
     data[config_entry.entry_id] = {
         CONF_BIMONTHLY_ENERGY: _get_config_value(
@@ -172,8 +177,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     return True
 
 
+async def _async_options_updated(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
+    """Handle options update - reload integration to pick up new config."""
+    await hass.config_entries.async_reload(config_entry.entry_id)
+
+
 async def async_update_options(hass: HomeAssistant, config_entry: ConfigEntry):
-    """Update options."""
+    """Update options (legacy handler, kept for compatibility)."""
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 

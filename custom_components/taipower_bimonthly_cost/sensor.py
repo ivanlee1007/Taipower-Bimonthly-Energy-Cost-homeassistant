@@ -8,6 +8,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     ATTR_BIMONTHLY_ENERGY,
@@ -82,6 +83,26 @@ async def async_setup_entry(
                 "Skipping sensor setup. Please configure via Integration -> Options."
             )
             return
+
+        # ── Clean up stale entities from this config entry ──
+        # When energy entity changes, unique_ids change and old sensors become
+        # orphaned (unavailable/restored). Remove them so only current ones exist.
+        registry = er.async_get(hass)
+        current_ids = {
+            f"{energy_entity}-{desc.key}" for desc in COST_SENSORS
+        }
+        for entity_entry in list(registry.entities.values()):
+            if (
+                entity_entry.config_entry_id == entry.entry_id
+                and entity_entry.platform == DOMAIN
+                and entity_entry.unique_id not in current_ids
+            ):
+                _LOGGER.info(
+                    "TaiPower: removing stale sensor %s (unique_id=%s)",
+                    entity_entry.entity_id,
+                    entity_entry.unique_id,
+                )
+                registry.async_remove(entity_entry.entity_id)
 
         for description in COST_SENSORS:
             if description.key == "kwh_cost":
