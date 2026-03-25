@@ -11,82 +11,74 @@ utility_meter:
     source: sensor.total_power
 
 sensor:
+  # ── 當前電度單價（114年10月費率）──
   - platform: template
     sensors:
       kwh_cost:
         value_template: >
           {% if now().month in [6,7,8,9] %}
-            {% if states("sensor.bimonthly_energy") | float < 240 %}
-              {{1.68}}
-            {% elif states("sensor.bimonthly_energy") | float >= 240  and states("sensor.bimonthly_energy") | float < 660 %}
-              {{2.45}}
-            {% elif states("sensor.bimonthly_energy") | float >= 660  and states("sensor.bimonthly_energy") | float < 1000 %}
-              {{3.7}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1000  and states("sensor.bimonthly_energy") | float < 1400 %}
-              {{5.04}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1400  and states("sensor.bimonthly_energy") | float < 2000 %}
-              {{6.24}}
-            {% elif states("sensor.bimonthly_energy") | float >= 2000 %}
-              {{8.46}}
+            {% if states("sensor.bimonthly_energy") | float < 120 %}
+              {{1.78}}
+            {% elif states("sensor.bimonthly_energy") | float >= 120 and states("sensor.bimonthly_energy") | float < 330 %}
+              {{2.55}}
+            {% elif states("sensor.bimonthly_energy") | float >= 330 and states("sensor.bimonthly_energy") | float < 500 %}
+              {{3.80}}
+            {% elif states("sensor.bimonthly_energy") | float >= 500 and states("sensor.bimonthly_energy") | float < 700 %}
+              {{5.14}}
+            {% elif states("sensor.bimonthly_energy") | float >= 700 and states("sensor.bimonthly_energy") | float < 1000 %}
+              {{6.44}}
+            {% elif states("sensor.bimonthly_energy") | float >= 1000 %}
+              {{8.86}}
             {% endif %}
           {% else %}
-            {% if states("sensor.bimonthly_energy") | float < 240 %}
-              {{1.68}}
-            {% elif states("sensor.bimonthly_energy") | float >= 240  and states("sensor.bimonthly_energy") | float < 660 %}
-              {{2.16}}
-            {% elif states("sensor.bimonthly_energy") | float >= 660  and states("sensor.bimonthly_energy") | float < 1000 %}
-              {{3.03}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1000  and states("sensor.bimonthly_energy") | float < 1400 %}
-              {{4.14}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1400  and states("sensor.bimonthly_energy") | float < 2000 %}
-              {{5.07}}
-            {% elif states("sensor.bimonthly_energy") | float >= 2000 %}
-              {{6.63}}
+            {% if states("sensor.bimonthly_energy") | float < 120 %}
+              {{1.78}}
+            {% elif states("sensor.bimonthly_energy") | float >= 120 and states("sensor.bimonthly_energy") | float < 330 %}
+              {{2.26}}
+            {% elif states("sensor.bimonthly_energy") | float >= 330 and states("sensor.bimonthly_energy") | float < 500 %}
+              {{3.13}}
+            {% elif states("sensor.bimonthly_energy") | float >= 500 and states("sensor.bimonthly_energy") | float < 700 %}
+              {{4.24}}
+            {% elif states("sensor.bimonthly_energy") | float >= 700 and states("sensor.bimonthly_energy") | float < 1000 %}
+              {{5.27}}
+            {% elif states("sensor.bimonthly_energy") | float >= 1000 %}
+              {{7.03}}
             {% endif %}
           {% endif %}
         friendly_name: "目前電度單價"
         unit_of_measurement: "TWD/kWh"
         device_class: monetary
 
+  # ── 累計電費（累進級距，114年10月費率）──
   - platform: template
     sensors:
       power_cost:
         value_template: >
+          {% set kwh = states("sensor.bimonthly_energy") | float %}
           {% if now().month in [6,7,8,9] %}
-            {% if states("sensor.bimonthly_energy") | float < 240 %}
-              {{(states("sensor.bimonthly_energy") | float * states("sensor.kwh_cost") | float) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 240  and states("sensor.bimonthly_energy") | float < 660 %}
-              {{(((states("sensor.bimonthly_energy") | float - 240) * states("sensor.kwh_cost") | float) + 403.2) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 660  and states("sensor.bimonthly_energy") | float < 1000 %}
-              {{(((states("sensor.bimonthly_energy") | float - 660) * states("sensor.kwh_cost") | float) + 1432.2) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1000  and states("sensor.bimonthly_energy") | float < 1400 %}
-              {{(((states("sensor.bimonthly_energy") | float - 1000) * states("sensor.kwh_cost") | float) + 2690.2) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1400  and states("sensor.bimonthly_energy") | float < 2000 %}
-              {{(((states("sensor.bimonthly_energy") | float - 1400) * states("sensor.kwh_cost") | float) + 4706.2) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 2000 %}
-              {{(((states("sensor.bimonthly_energy") | float - 2000) * states("sensor.kwh_cost") | float) + 8450.2) | round(0)}}
+            {% if kwh < 120 %} {{ (kwh * 1.78) | round(0) }}
+            {% elif kwh < 330 %} {{ ((kwh - 120) * 2.55 + 120 * 1.78) | round(0) }}
+            {% elif kwh < 500 %} {{ ((kwh - 330) * 3.80 + 210 * 2.55 + 120 * 1.78) | round(0) }}
+            {% elif kwh < 700 %} {{ ((kwh - 500) * 5.14 + 170 * 3.80 + 210 * 2.55 + 120 * 1.78) | round(0) }}
+            {% elif kwh < 1000 %} {{ ((kwh - 700) * 6.44 + 200 * 5.14 + 170 * 3.80 + 210 * 2.55 + 120 * 1.78) | round(0) }}
+            {% else %} {{ ((kwh - 1000) * 8.86 + 300 * 6.44 + 200 * 5.14 + 170 * 3.80 + 210 * 2.55 + 120 * 1.78) | round(0) }}
             {% endif %}
           {% else %}
-            {% if states("sensor.bimonthly_energy") | float < 240 %}
-              {{(states("sensor.bimonthly_energy") | float * states("sensor.kwh_cost") | float) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 240  and states("sensor.bimonthly_energy") | float < 660 %}
-              {{(((states("sensor.bimonthly_energy") | float - 240) * states("sensor.kwh_cost") | float) + 403.2) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 660  and states("sensor.bimonthly_energy") | float < 1000 %}
-              {{(((states("sensor.bimonthly_energy") | float - 660) * states("sensor.kwh_cost") | float) + 1310.4) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1000  and states("sensor.bimonthly_energy") | float < 1400 %}
-              {{(((states("sensor.bimonthly_energy") | float - 1000) * states("sensor.kwh_cost") | float) + 2340.6) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 1400  and states("sensor.bimonthly_energy") | float < 2000 %}
-              {{(((states("sensor.bimonthly_energy") | float - 1400) * states("sensor.kwh_cost") | float) + 3996.6) | round(0)}}
-            {% elif states("sensor.bimonthly_energy") | float >= 2000 %}
-              {{(((states("sensor.bimonthly_energy") | float - 2000) * states("sensor.kwh_cost") | float) + 7038.6) | round(0)}}
+            {% if kwh < 120 %} {{ (kwh * 1.78) | round(0) }}
+            {% elif kwh < 330 %} {{ ((kwh - 120) * 2.26 + 120 * 1.78) | round(0) }}
+            {% elif kwh < 500 %} {{ ((kwh - 330) * 3.13 + 210 * 2.26 + 120 * 1.78) | round(0) }}
+            {% elif kwh < 700 %} {{ ((kwh - 500) * 4.24 + 170 * 3.13 + 210 * 2.26 + 120 * 1.78) | round(0) }}
+            {% elif kwh < 1000 %} {{ ((kwh - 700) * 5.27 + 200 * 4.24 + 170 * 3.13 + 210 * 2.26 + 120 * 1.78) | round(0) }}
+            {% else %} {{ ((kwh - 1000) * 7.03 + 300 * 5.27 + 200 * 4.24 + 170 * 3.13 + 210 * 2.26 + 120 * 1.78) | round(0) }}
             {% endif %}
           {% endif %}
         friendly_name: "目前總電費"
         unit_of_measurement: "TWD"
         device_class: monetary
 
+  # ── W → kWh 轉換 ──
   - platform: integration
-    source: sensor.your_W_sensor # 這是您的用電 "W (瓦特)" 偵測器
+    source: sensor.your_W_sensor  # 原始的用電 W 偵測器
     name: total_power
     unit_prefix: k
     method: right
