@@ -10,6 +10,7 @@ class TaiPowerConfigCard extends HTMLElement {
     this._saving = false;
     this._error = null;
     this._success = null;
+    this._tab = 'rates';
   }
 
   setConfig(config) {
@@ -105,6 +106,11 @@ class TaiPowerConfigCard extends HTMLElement {
       },
     };
     return defaults[mode] || defaults.residential;
+  }
+
+  _switchTab(tab) {
+    this._tab = tab;
+    this.render();
   }
 
   async _onApplyRates() {
@@ -322,58 +328,68 @@ class TaiPowerConfigCard extends HTMLElement {
 
     const mode = this._options.billing_mode || 'residential';
     const manualRates = this._options.manual_rates;
-    const rateTable = this._buildRateTable(mode, manualRates);
     const modeNames = { residential: '住宅用', non_commercial: '非營業用', commercial: '營業用' };
 
     this.innerHTML = `
-      <ha-card header="⚡ 台電二段式電價設定">
+      <ha-card header="⚡ 台電二段式電價">
         <div class="card-content">
           ${this._loading ? '<div class="loading">載入中...</div>' : ''}
 
           ${this._error ? `<div class="msg error">❌ ${this._error}</div>` : ''}
           ${this._success ? `<div class="msg success">✅ ${this._success}</div>` : ''}
 
-          ${rateTable}
-
-          <hr/>
-
-          <h3>⚙️ 設定</h3>
-          <form id="taipower-form">
-            <div class="field">
-              <label>累計電量實體 (Entity ID)</label>
-              <select name="bimonthly_energy">
-                <option value="">-- 請選擇 --</option>
-                ${this._getEnergyEntities().map(e =>
-                  `<option value="${e.entity_id}" ${e.entity_id === this._options.bimonthly_energy ? 'selected' : ''}>${e.name} (${e.entity_id})</option>`
-                ).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label>計費模式</label>
-              <select name="billing_mode">
-                ${Object.entries(modeNames).map(([k, v]) =>
-                  `<option value="${k}" ${k === mode ? 'selected' : ''}>${v}</option>`
-                ).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label>抄表起始日</label>
-              <input type="date" name="meter_start_day" value="${this._options.meter_start_day || ''}"/>
-            </div>
-            <div class="field">
-              <details>
-                <summary style="cursor:pointer;color:var(--secondary-text-color,#888);font-size:0.9em">▶ 進階：手動費率 JSON（備用）</summary>
-                <textarea name="manual_rates" rows="3" style="margin-top:6px" placeholder='留空使用預設費率'>${manualRates ? JSON.stringify(manualRates, null, 2) : ''}</textarea>
-              </details>
-            </div>
-            <div class="actions">
-              <button type="submit" ${this._saving ? 'disabled' : ''}>${this._saving ? '儲存中...' : '💾 儲存設定'}</button>
-            </div>
-          </form>
-
-          <div class="info">
-            <p>費率版本：${this._rates?.rates_version || '—'} | 資料距今：${this._rates?.rates_age_days ?? '—'} 天 ${this._rates?.manual_override ? '<span class="badge badge-manual">手動覆蓋中</span>' : ''}</p>
+          <!-- Tabs -->
+          <div class="tabs">
+            <button class="tab ${this._tab === 'rates' ? 'tab-active' : ''}" data-tab="rates">📊 費率表</button>
+            <button class="tab ${this._tab === 'settings' ? 'tab-active' : ''}" data-tab="settings">⚙️ 設定</button>
           </div>
+
+          <!-- Tab: 費率表 -->
+          ${this._tab === 'rates' ? `
+            ${this._buildRateTable(mode, manualRates)}
+            <div class="info">
+              <p>費率版本：${this._rates?.rates_version || '—'} | 資料距今：${this._rates?.rates_age_days ?? '—'} 天 ${this._rates?.manual_override ? '<span class="badge badge-manual">手動覆蓋中</span>' : ''}</p>
+            </div>
+          ` : ''}
+
+          <!-- Tab: 設定 -->
+          ${this._tab === 'settings' ? `
+            <form id="taipower-form">
+              <div class="field">
+                <label>累計電量實體 (Entity ID)</label>
+                <select name="bimonthly_energy">
+                  <option value="">-- 請選擇 --</option>
+                  ${this._getEnergyEntities().map(e =>
+                    `<option value="${e.entity_id}" ${e.entity_id === this._options.bimonthly_energy ? 'selected' : ''}>${e.name} (${e.entity_id})</option>`
+                  ).join('')}
+                </select>
+              </div>
+              <div class="field">
+                <label>計費模式</label>
+                <select name="billing_mode">
+                  ${Object.entries(modeNames).map(([k, v]) =>
+                    `<option value="${k}" ${k === mode ? 'selected' : ''}>${v}</option>`
+                  ).join('')}
+                </select>
+              </div>
+              <div class="field">
+                <label>抄表起始日</label>
+                <input type="date" name="meter_start_day" value="${this._options.meter_start_day || ''}"/>
+              </div>
+              <div class="field">
+                <details>
+                  <summary style="cursor:pointer;color:var(--secondary-text-color,#888);font-size:0.9em">▶ 進階：手動費率 JSON（備用）</summary>
+                  <textarea name="manual_rates" rows="3" style="margin-top:6px" placeholder='留空使用預設費率'>${manualRates ? JSON.stringify(manualRates, null, 2) : ''}</textarea>
+                </details>
+              </div>
+              <div class="actions">
+                <button type="submit" ${this._saving ? 'disabled' : ''}>${this._saving ? '儲存中...' : '💾 儲存設定'}</button>
+              </div>
+            </form>
+            <div class="info">
+              <p>費率版本：${this._rates?.rates_version || '—'} | 資料距今：${this._rates?.rates_age_days ?? '—'} 天</p>
+            </div>
+          ` : ''}
         </div>
       </ha-card>
     `;
@@ -383,24 +399,31 @@ class TaiPowerConfigCard extends HTMLElement {
     style.textContent = `
       :host { display: block; }
       .card-content { padding: 16px; font-family: var(--ha-font-family); }
-      h3 { margin: 16px 0 8px; font-size: 1.1em; }
-      hr { border: none; border-top: 1px solid var(--divider-color, #e0e0e0); margin: 16px 0; }
       .loading { text-align: center; padding: 20px; color: var(--secondary-text-color); }
+      /* Tabs */
+      .tabs { display: flex; gap: 0; margin-bottom: 14px; border-bottom: 2px solid var(--divider-color, #e0e0e0); }
+      .tab { flex: 1; padding: 8px 0; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--secondary-text-color, #888); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.2s, border-color 0.2s; }
+      .tab:hover { color: var(--primary-text-color); }
+      .tab-active { color: var(--primary-color, #2196f3); border-bottom-color: var(--primary-color, #2196f3); }
+      /* Rate table */
       .rate-section { margin-bottom: 8px; }
       .season-label { margin-bottom: 8px; color: var(--secondary-text-color, #666); font-size: 0.9em; }
       .rate-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 0.9em; }
-      .rate-table th, .rate-table td { padding: 6px 10px; border: 1px solid var(--divider-color, #e0e0e0); text-align: center; }
+      .rate-table th, .rate-table td { padding: 6px 8px; border: 1px solid var(--divider-color, #e0e0e0); text-align: center; }
       .rate-table th { background: var(--card-background-color, #f5f5f5); font-weight: 600; }
-      .rate-table td:first-child { text-align: left; }
+      .rate-table td:first-child { text-align: left; white-space: nowrap; }
       .rate-table td.highlight { background: #fff3e0; font-weight: 600; }
       .rate-table td.current-rate { background: #e8f5e9; }
-      .rate-input { width: 70px; padding: 4px 6px; border: 1px solid var(--divider-color, #ccc); border-radius: 3px; font-size: 13px; text-align: center; background: var(--card-background-color, #fff); color: var(--primary-text-color); }
+      .rate-input { width: 64px; padding: 4px 6px; border: 1px solid var(--divider-color, #ccc); border-radius: 3px; font-size: 13px; text-align: center; background: var(--card-background-color, #fff); color: var(--primary-text-color); }
       .rate-input:focus { border-color: var(--primary-color, #2196f3); outline: none; box-shadow: 0 0 0 1px var(--primary-color, #2196f3); }
       .rate-actions { margin-top: 10px; display: flex; gap: 8px; }
       .rate-actions button { background: var(--primary-color, #2196f3); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
       .rate-actions button:hover { opacity: 0.9; }
       .rate-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
       #reset-rates-btn { background: var(--secondary-background-color, #757575); }
+      /* Settings form */
+      h3 { margin: 16px 0 8px; font-size: 1.1em; }
+      hr { border: none; border-top: 1px solid var(--divider-color, #e0e0e0); margin: 16px 0; }
       .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; vertical-align: middle; color: #fff; }
       .badge-manual { background: #ff9800; }
       .badge-default { background: #4caf50; }
@@ -419,6 +442,11 @@ class TaiPowerConfigCard extends HTMLElement {
       .info p { margin: 2px 0; }
     `;
     this.appendChild(style);
+
+    // Bind tab clicks
+    this.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => this._switchTab(btn.dataset.tab));
+    });
 
     // Bind form submit
     const form = this.querySelector('#taipower-form');
