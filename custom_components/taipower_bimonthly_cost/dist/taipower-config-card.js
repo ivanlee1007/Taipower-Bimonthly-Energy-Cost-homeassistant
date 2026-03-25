@@ -107,6 +107,73 @@ class TaiPowerConfigCard extends HTMLElement {
     return defaults[mode] || defaults.residential;
   }
 
+  async _onApplyRates() {
+    if (!this._hass) return;
+    this._saving = true;
+    this._error = null;
+    this._success = null;
+    this.render();
+
+    const inputs = this.querySelectorAll('.rate-input');
+    const tierCount = inputs.length / 2; // summer + non_summer
+    const summer = [];
+    const non_summer = [];
+
+    for (let i = 0; i < tierCount; i++) {
+      const sInput = this.querySelector(`.rate-input[data-tier="${i}"][data-season="summer"]`);
+      const nsInput = this.querySelector(`.rate-input[data-tier="${i}"][data-season="non_summer"]`);
+      summer.push(parseFloat(sInput?.value || '0'));
+      non_summer.push(parseFloat(nsInput?.value || '0'));
+    }
+
+    if (summer.some(isNaN) || non_summer.some(isNaN)) {
+      this._error = '費率必須是數字';
+      this._saving = false;
+      this.render();
+      return;
+    }
+
+    const mode = this._options.billing_mode || 'residential';
+    const newManualRates = { ...this._options.manual_rates };
+    newManualRates[mode] = { summer, non_summer };
+
+    try {
+      await this._hass.callService('taipower_bimonthly_cost', 'update_config', {
+        manual_rates: newManualRates,
+      });
+      this._success = '費率已更新！';
+      setTimeout(() => this._loadFromEntities(), 1500);
+    } catch (err) {
+      this._error = '套用失敗: ' + err.message;
+    }
+    this._saving = false;
+    this.render();
+  }
+
+  async _onResetRates() {
+    if (!this._hass) return;
+    this._saving = true;
+    this._error = null;
+    this._success = null;
+    this.render();
+
+    const mode = this._options.billing_mode || 'residential';
+    const newManualRates = { ...this._options.manual_rates };
+    delete newManualRates[mode];
+
+    try {
+      await this._hass.callService('taipower_bimonthly_cost', 'update_config', {
+        manual_rates: Object.keys(newManualRates).length > 0 ? newManualRates : null,
+      });
+      this._success = '已恢復預設費率！';
+      setTimeout(() => this._loadFromEntities(), 1500);
+    } catch (err) {
+      this._error = '恢復失敗: ' + err.message;
+    }
+    this._saving = false;
+    this.render();
+  }
+
   async _onSave(e) {
     e.preventDefault();
     if (!this._hass) return;
@@ -213,17 +280,17 @@ class TaiPowerConfigCard extends HTMLElement {
     const modeNames = { residential: '住宅用', non_commercial: '非營業用', commercial: '營業用' };
     const now = new Date();
     const isSummer = (now.getMonth() + 1 >= 6 && now.getMonth() + 1 <= 9);
+    const tierCount = rateData.summer.length;
 
     let html = `
       <div class="rate-section">
-        <h3>📊 目前費率表 — ${modeNames[mode] || mode} ${isManual ? '<span class="badge badge-manual">手動覆蓋</span>' : '<span class="badge badge-default">預設費率</span>'}</h3>
-        <div class="season-label">當前季節：<strong>${isSummer ? '☀️ 夏季 (6/1~9/30)' : '❄️ 非夏季'}</strong></div>
+        <h3>📊 費率表 — ${modeNames[mode] || mode} ${isManual ? '<span class="badge badge-manual">手動覆蓋</span>' : '<span class="badge badge-default">預設費率</span>'}</h3>
+        <div class="season-label">當前季節：<strong>${isSummer ? '☀️ 夏季 (6/1~9/30)' : '❄️ 非夏季'}</strong>　<span style="color:#888;font-size:0.85em">（直接修改費率，按下方按鈕套用）</span></div>
         <table class="rate-table">
           <thead><tr><th>級距 (kWh)</th><th>夏季費率</th><th>非夏季費率</th><th>當前</th></tr></thead>
           <tbody>
     `;
 
-    const tierCount = rateData.summer.length;
     for (let i = 0; i < tierCount; i++) {
       const sr = rateData.summer[i];
       const nsr = rateData.non_summer[i];
@@ -231,18 +298,22 @@ class TaiPowerConfigCard extends HTMLElement {
       const prevThr = i > 0 ? rateData.thresholds[i - 1] : 0;
       const label = i === 0 ? `0 ~ ${thr}` : `${prevThr} ~ ${thr}`;
       const currentRate = isSummer ? sr : nsr;
-      const otherRate = isSummer ? nsr : sr;
       html += `
         <tr>
           <td>${label}</td>
-          <td class="${isSummer ? 'highlight' : ''}">${sr}</td>
-          <td class="${!isSummer ? 'highlight' : ''}">${nsr}</td>
+          <td class="${isSummer ? 'highlight' : ''}"><input type="number" step="0.01" min="0" class="rate-input" data-tier="${i}" data-season="summer" value="${sr}"/></td>
+          <td class="${!isSummer ? 'highlight' : ''}"><input type="number" step="0.01" min="0" class="rate-input" data-tier="${i}" data-season="non_summer" value="${nsr}"/></td>
           <td class="current-rate"><strong>${currentRate}</strong></td>
         </tr>
       `;
     }
 
-    html += `</tbody></table></div>`;
+    html += `</tbody></table>
+        <div class="rate-actions">
+          <button type="button" id="apply-rates-btn" ${this._saving ? 'disabled' : ''}>💾 套用費率${isManual ? '（更新）' : '（設為手動覆蓋）'}</button>
+          ${isManual ? '<button type="button" id="reset-rates-btn">↩️ 恢復預設</button>' : ''}
+        </div>
+      </div>`;
     return html;
   }
 
@@ -290,8 +361,10 @@ class TaiPowerConfigCard extends HTMLElement {
               <input type="date" name="meter_start_day" value="${this._options.meter_start_day || ''}"/>
             </div>
             <div class="field">
-              <label>手動費率覆蓋 (JSON，留空使用預設)</label>
-              <textarea name="manual_rates" rows="3" placeholder='{"residential":{"summer":[1.78,2.55,3.80,5.14,6.44,8.86],"non_summer":[1.78,2.26,3.13,4.24,5.27,7.03]}}'>${manualRates ? JSON.stringify(manualRates, null, 2) : ''}</textarea>
+              <details>
+                <summary style="cursor:pointer;color:var(--secondary-text-color,#888);font-size:0.9em">▶ 進階：手動費率 JSON（備用）</summary>
+                <textarea name="manual_rates" rows="3" style="margin-top:6px" placeholder='留空使用預設費率'>${manualRates ? JSON.stringify(manualRates, null, 2) : ''}</textarea>
+              </details>
             </div>
             <div class="actions">
               <button type="submit" ${this._saving ? 'disabled' : ''}>${this._saving ? '儲存中...' : '💾 儲存設定'}</button>
@@ -321,6 +394,13 @@ class TaiPowerConfigCard extends HTMLElement {
       .rate-table td:first-child { text-align: left; }
       .rate-table td.highlight { background: #fff3e0; font-weight: 600; }
       .rate-table td.current-rate { background: #e8f5e9; }
+      .rate-input { width: 70px; padding: 4px 6px; border: 1px solid var(--divider-color, #ccc); border-radius: 3px; font-size: 13px; text-align: center; background: var(--card-background-color, #fff); color: var(--primary-text-color); }
+      .rate-input:focus { border-color: var(--primary-color, #2196f3); outline: none; box-shadow: 0 0 0 1px var(--primary-color, #2196f3); }
+      .rate-actions { margin-top: 10px; display: flex; gap: 8px; }
+      .rate-actions button { background: var(--primary-color, #2196f3); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+      .rate-actions button:hover { opacity: 0.9; }
+      .rate-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+      #reset-rates-btn { background: var(--secondary-background-color, #757575); }
       .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; vertical-align: middle; color: #fff; }
       .badge-manual { background: #ff9800; }
       .badge-default { background: #4caf50; }
@@ -344,6 +424,16 @@ class TaiPowerConfigCard extends HTMLElement {
     const form = this.querySelector('#taipower-form');
     if (form) {
       form.addEventListener('submit', this._onSave.bind(this));
+    }
+
+    // Bind rate table buttons
+    const applyBtn = this.querySelector('#apply-rates-btn');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', this._onApplyRates.bind(this));
+    }
+    const resetBtn = this.querySelector('#reset-rates-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', this._onResetRates.bind(this));
     }
   }
 
