@@ -37,7 +37,7 @@ CONFIG_SCHEMA = vol.Schema(
 # ── Card paths ──────────────────────────────────────────────────────────────
 _CARD_SRC_NAME = "taipower-config-card.js"
 _CARD_DIR_NAME = "taipower"
-_CARD_STATIC_URL = "/taipower_static/"
+_CARD_STATIC_URL = "/taipower_static/taipower-config-card.js"
 
 
 def _get_card_src(hass: HomeAssistant) -> Path:
@@ -70,10 +70,9 @@ def _get_card_js_url(hass: HomeAssistant) -> str:
 
     Uses the integration's own static path (served from dist/) so that
     the latest file is always available — no file copy to www/ required.
-    Falls back to /local/ path if the static path is not registered.
     """
     version = MANIFEST.get("version", "0")
-    return f"{_CARD_STATIC_URL}{_CARD_SRC_NAME}?v={version}"
+    return f"{_CARD_STATIC_URL}?v={version}"
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
@@ -159,13 +158,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     await hass.async_add_executor_job(_install_card_js, hass)
 
     # Register static path so HA serves the JS file directly from dist/
-    dist_dir = str(Path(__file__).parent / "dist")
-    if Path(dist_dir).exists():
+    # Uses FILE path (not directory) matching ha-cwa-agri/ha-unircon pattern
+    card_src = _get_card_src(hass)
+    if card_src.exists():
         try:
             await hass.http.async_register_static_paths([
                 StaticPathConfig(
                     _CARD_STATIC_URL,
-                    dist_dir,
+                    str(card_src),
                     cache_headers=True,
                 )
             ])
@@ -175,9 +175,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
             frontend.add_extra_js_url(hass, _get_card_js_url(hass))
         except ValueError:
             _LOGGER.debug("TaiPower card JS URL already registered: %s", _get_card_js_url(hass))
-        _LOGGER.info("TaiPower card registered: %s -> %s", _CARD_STATIC_URL, dist_dir)
+        _LOGGER.info("TaiPower card registered: %s -> %s", _CARD_STATIC_URL, card_src)
     else:
-        _LOGGER.warning("TaiPower card dist directory not found: %s", dist_dir)
+        _LOGGER.warning("TaiPower card JS file not found: %s", card_src)
 
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
     return True
