@@ -6,6 +6,7 @@
         "error": {
             "entitynotexist": "這個實體 (Entity) 不存在!!",
             "dataformaterror": "日期格式不正確, 應該是 YYYY/MM/DD",
+            "manual_rates_format": "JSON 格式錯誤，請確認費率值為數字陣列",
             "unknown": "未預期錯誤"
         },
         "step": {
@@ -21,12 +22,19 @@
         }
     },
     "options": {
+        "error": {
+            "entitynotexist": "這個實體 (Entity) 不存在!!",
+            "dataformaterror": "日期格式不正確, 應該是 YYYY/MM/DD",
+            "manual_rates_format": "JSON 格式錯誤，請確認費率值為數字陣列",
+            "unknown": "未預期錯誤"
+        },
         "step": {
             "init": {
                 "data": {
                     "bimonthly_energy": "雙月計量電源實體 (Entity)",
                     "meter_start_day": "電錶抄表日",
-                    "billing_mode": "計費模式"
+                    "billing_mode": "計費模式",
+                    "manual_rates": "手動費率覆寫 (JSON，留空使用內建費率)"
                 }
             }
         }

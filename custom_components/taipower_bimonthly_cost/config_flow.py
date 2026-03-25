@@ -1,4 +1,5 @@
 """Config flow for TaiPower Energy Cost integration."""
+import json
 import logging
 from datetime import datetime
 import voluptuous as vol
@@ -14,6 +15,7 @@ from .const import (
     CONF_BIMONTHLY_ENERGY,
     CONF_METER_START_DAY,
     CONF_BILLING_MODE,
+    CONF_MANUAL_RATES,
     DOMAIN,
     BILLING_MODES,
     DEFAULT_BILLING_MODE,
@@ -122,14 +124,64 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             if ret:
-                return self.async_create_entry(title="", data=user_input)
+                # Parse and validate manual rates JSON
+                manual_rates = user_input.pop(CONF_MANUAL_RATES, "")
+                if manual_rates and manual_rates.strip():
+                    try:
+                        parsed = json.loads(manual_rates)
+                        if not isinstance(parsed, dict):
+                            errors["base"] = "manual_rates_format"
+                        else:
+                            for mode, data in parsed.items():
+                                if mode not in BILLING_MODES:
+                                    raise ValueError(f"Unknown mode: {mode}")
+                                if not isinstance(data, dict):
+                                    raise ValueError(f"{mode} must be an object")
+                                summer = data.get("summer", [])
+                                non_summer = data.get("non_summer", [])
+                                if not isinstance(summer, list) or not isinstance(non_summer, list):
+                                    raise ValueError(f"{mode}: summer/non_summer must be arrays")
+                                if len(summer) != len(non_summer):
+                                    raise ValueError(f"{mode}: summer and non_summer must have same length")
+                                if any(not isinstance(v, (int, float)) for v in summer + non_summer):
+                                    raise ValueError(f"{mode}: rates must be numbers")
+                                if any(v <= 0 for v in summer + non_summer):
+                                    raise ValueError(f"{mode}: rates must be positive")
+                            user_input[CONF_MANUAL_RATES] = parsed
+                    except json.JSONDecodeError:
+                        errors["base"] = "manual_rates_format"
+                    except ValueError as e:
+                        _LOGGER.warning("Manual rates validation failed: %s", e)
+                        errors["base"] = "manual_rates_format"
+                else:
+                    user_input[CONF_MANUAL_RATES] = {}
+
+                if not errors:
+                    return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
             step_id="init",
             data_schema=self._get_options_schema(),
+            errors=errors,
         )
 
     def _get_options_schema(self):
+        # Build example JSON for current billing mode
+        current_mode = _get_config_value(
+            self.config_entry, CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
+        default_tiers = BILLING_MODES.get(current_mode, {}).get("tiers", [])
+        example = {
+            current_mode: {
+                "summer": [t["rate_summer"] for t in default_tiers],
+                "non_summer": [t["rate_non_summer"] for t in default_tiers],
+            }
+        }
+        # manual_rates default: if already saved as dict, show as JSON; else empty
+        raw_manual = _get_config_value(self.config_entry, CONF_MANUAL_RATES, "")
+        if isinstance(raw_manual, dict):
+            manual_default = json.dumps(raw_manual, ensure_ascii=False)
+        else:
+            manual_default = raw_manual or ""
         return vol.Schema(
             {
                 vol.Required(
@@ -154,6 +206,15 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                         for k, v in BILLING_MODES.items()
                     ]}},
                 ),
+                vol.Optional(
+                    CONF_MANUAL_RATES,
+                    default=manual_default,
+                ): selector.selector({
+                    "text": {
+                        "multiline": True,
+                        "placeholder": json.dumps(example, ensure_ascii=False),
+                    },
+                }),
             }
         )
 

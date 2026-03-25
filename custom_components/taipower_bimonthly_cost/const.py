@@ -20,12 +20,14 @@ ATTR_BILLING_MODE = "billing_mode"
 ATTR_PDF_VERSION = "pdf_version"
 ATTR_RATES_VERSION = "rates_version"
 ATTR_LAST_UPDATED = "rates_last_updated"
+ATTR_LAST_PARSED_AT = "rates_last_parsed_at"
 ATTR_RATES_AGE_DAYS = "rates_age_days"
 UNIT_KWH_COST = "TWD/kWh"
 UNIT_TWD = "TWD"
 CONF_BIMONTHLY_ENERGY = "bimonthly_energy"
 CONF_METER_START_DAY = "meter_start_day"
 CONF_BILLING_MODE = "billing_mode"
+CONF_MANUAL_RATES = "manual_rates"
 
 # ── Billing Modes ────────────────────────────────────────────────────────────
 # Tier thresholds are cumulative kWh boundaries.
@@ -76,22 +78,68 @@ BILLING_MODES = {
 DEFAULT_BILLING_MODE = "residential"
 
 
+# ── Manual Rate Override ─────────────────────────────────────────────────────
+# Manual rates format stored in entry.options[CONF_MANUAL_RATES]:
+# {
+#   "residential": {
+#     "summer": [1.78, 2.55, 3.80, 5.14, 6.44, 8.86],
+#     "non_summer": [1.78, 2.26, 3.13, 4.24, 5.27, 7.03]
+#   },
+#   ...
+# }
+# Each array maps 1:1 to the built-in tier thresholds for that mode.
+
+
+def get_effective_tiers(entry_data_or_options: dict, mode: str) -> list[dict]:
+    """Return tiers to use: manual override if set, else built-in defaults.
+
+    entry_data_or_options should be entry.options (preferred) or entry.data.
+    """
+    manual = entry_data_or_options.get(CONF_MANUAL_RATES, {})
+    if mode in manual:
+        summer = manual[mode].get("summer", [])
+        non_summer = manual[mode].get("non_summer", [])
+        if summer and non_summer and len(summer) == len(non_summer):
+            # Map to tier structure using built-in thresholds
+            defaults = BILLING_MODES.get(mode, {}).get("tiers", [])
+            tiers = []
+            for i, (s, ns) in enumerate(zip(summer, non_summer)):
+                threshold = defaults[i]["threshold"] if i < len(defaults) else None
+                tiers.append({
+                    "threshold": threshold,
+                    "rate_summer": float(s),
+                    "rate_non_summer": float(ns),
+                })
+            return tiers
+    return BILLING_MODES.get(mode, {}).get("tiers", [])
+
+
 # ── Cost Calculation ─────────────────────────────────────────────────────────
 
-def calculate_cost(kwh: float, mode: str, is_summer: bool) -> tuple:
+def calculate_cost(kwh: float, mode: str, is_summer: bool, tiers: list[dict] | None = None) -> tuple:
     """Calculate the cost and average kWh cost from cumulative kWh usage.
 
     Uses progressive (累進) tiered pricing:
       - For each tier, the rate applies only to the kWh within that tier.
       - The *average* kWh cost (self._kwh_cost) is total_cost / total_kwh.
 
+    Args:
+        kwh: Total kWh usage.
+        mode: Billing mode key (residential / non_commercial / commercial).
+        is_summer: True for summer months (6-9).
+        tiers: Optional override tiers. If None, uses BILLING_MODES defaults.
+
     Returns:
         (total_cost, avg_kwh_cost)  or  (None, None) if kwh < 0 or mode not found.
     """
-    if kwh < 0 or mode not in BILLING_MODES:
+    if kwh < 0:
         return None, None
 
-    tiers = BILLING_MODES[mode]["tiers"]
+    if tiers is None:
+        if mode not in BILLING_MODES:
+            return None, None
+        tiers = BILLING_MODES[mode]["tiers"]
+
     rate_key = "rate_summer" if is_summer else "rate_non_summer"
 
     total_cost = 0.0

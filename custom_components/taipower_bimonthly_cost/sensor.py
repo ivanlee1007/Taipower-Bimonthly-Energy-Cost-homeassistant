@@ -17,10 +17,12 @@ from .const import (
     ATTR_PDF_VERSION,
     ATTR_RATES_VERSION,
     ATTR_LAST_UPDATED,
+    ATTR_LAST_PARSED_AT,
     ATTR_RATES_AGE_DAYS,
     CONF_BIMONTHLY_ENERGY,
     CONF_METER_START_DAY,
     CONF_BILLING_MODE,
+    CONF_MANUAL_RATES,
     DOMAIN,
     UNIT_KWH_COST,
     COST_SENSORS,
@@ -28,6 +30,7 @@ from .const import (
     BILLING_MODES,
     TaiPowerCostSensorDescription,
     calculate_cost,
+    get_effective_tiers,
     validate_rates,
     load_rates_info,
 )
@@ -52,8 +55,10 @@ async def async_setup_entry(
                     [EnergyCostSensor(hass, entry.options, description)]
                 )
             if description.key == "rate_status":
+                # Merge data + options so RateStatusSensor can see manual_rates
+                merged = {**entry.data, **entry.options}
                 entities.extend(
-                    [RateStatusSensor(hass, entry.data, description)]
+                    [RateStatusSensor(hass, merged, description)]
                 )
 
         async_add_entities(entities)
@@ -70,6 +75,7 @@ class CostSensor(SensorEntity):
         self._energy_entity = entry_data[CONF_BIMONTHLY_ENERGY]
         self._kwh_cost = None
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
+        self._entry_data = entry_data  # keep for manual rates lookup
 
     @property
     def name(self):
@@ -110,7 +116,8 @@ class KwhCostSensor(CostSensor):
                 return None
             if isinstance(state, (float, int, str)):
                 is_summer = now.month in [6, 7, 8, 9]
-                _, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer)
+                tiers = get_effective_tiers(self._entry_data, self._billing_mode)
+                _, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer, tiers)
                 self._kwh_cost = avg_cost
         return self._kwh_cost
 
@@ -143,7 +150,8 @@ class EnergyCostSensor(KwhCostSensor):
                 return None
             if isinstance(state, (float, int, str)):
                 is_summer = now.month in [6, 7, 8, 9]
-                total_cost, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer)
+                tiers = get_effective_tiers(self._entry_data, self._billing_mode)
+                total_cost, avg_cost = calculate_cost(float(state), self._billing_mode, is_summer, tiers)
                 self._kwh_cost = avg_cost
                 value = total_cost
         if ((now - self._reset_day).days % 60) == 59:
@@ -203,8 +211,9 @@ class RateStatusSensor(SensorEntity):
         self._hass = hass
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
         self._energy_entity = entry_data.get(CONF_BIMONTHLY_ENERGY, "")
+        self._entry_data = entry_data  # for manual override detection
         self._status = "no_info"
-        self._details = {}
+        self._details = {"_entry_data": entry_data}
 
     @property
     def name(self):
@@ -220,14 +229,20 @@ class RateStatusSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        # Check if manual rates override is active for current billing mode
+        manual = self._details.get("_entry_data", {}).get(CONF_MANUAL_RATES, {})
+        manual_override = self._billing_mode in manual and bool(manual[self._billing_mode])
+
         attrs = {
             ATTR_RATES_VERSION: self._details.get("rates_version", "unknown"),
             ATTR_LAST_UPDATED: self._details.get("last_updated", "unknown"),
+            ATTR_LAST_PARSED_AT: self._details.get("last_updated", "unknown"),
             ATTR_RATES_AGE_DAYS: self._details.get("age_days"),
             ATTR_PDF_VERSION: self._details.get("pdf_version", "unknown"),
             "pdf_url": self._details.get("pdf_url", ""),
             "billing_mode": self._billing_mode,
             "status_code": self._status,
+            "manual_override": manual_override,
         }
         if "mismatches" in self._details:
             attrs["mismatches"] = self._details["mismatches"]

@@ -6,6 +6,7 @@
         "error": {
             "entitynotexist": "The Entity is not exist!",
             "dataformaterror": "Incorrect data format, should be YYYY/MM/DD",
+            "manual_rates_format": "Invalid JSON format. Check your rate values are numbers in arrays.",
             "unknown": "Unexpected error"
         },
         "step": {
@@ -21,12 +22,19 @@
         }
     },
     "options": {
+        "error": {
+            "entitynotexist": "The Entity is not exist!",
+            "dataformaterror": "Incorrect data format, should be YYYY/MM/DD",
+            "manual_rates_format": "Invalid JSON format. Check your rate values are numbers in arrays.",
+            "unknown": "Unexpected error"
+        },
         "step": {
             "init": {
                 "data": {
                     "bimonthly_energy": "Bimonthly Energy Entity",
                     "meter_start_day": "Meter Start Day",
-                    "billing_mode": "Billing Mode"
+                    "billing_mode": "Billing Mode",
+                    "manual_rates": "Manual Rate Override (JSON, leave empty to use built-in)"
                 }
             }
         }
