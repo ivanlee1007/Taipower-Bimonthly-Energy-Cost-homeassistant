@@ -1,49 +1,50 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "Service is already configured"
-        },
-        "error": {
-            "entitynotexist": "The Entity is not exist!",
-            "dataformaterror": "Incorrect data format, should be YYYY/MM/DD",
-            "manual_rates_format": "Invalid JSON format. Check your rate values are numbers in arrays.",
-            "unknown": "Unexpected error"
-        },
-        "step": {
-            "user": {
-                "data": {
-                    "bimonthly_energy": "Bimonthly Energy Entity",
-                    "meter_start_day": "Meter Start Day",
-                    "billing_mode": "Billing Mode"
-                },
-                "description": "Please enter reset days, energy entity, and billing mode",
-                "title": "Choose the energy entity, reset days, and billing mode"
-            }
-        }
+  "config": {
+    "abort": {
+      "already_configured": "Service is already configured"
     },
-    "entity": {
-        "button": {
-            "update_rates": {
-                "name": "Update Taipower Rates"
-            }
-        }
+    "error": {
+      "entitynotexist": "The Entity does not exist!",
+      "dataformaterror": "Incorrect data format, should be YYYY-MM-DD",
+      "unknown": "Unexpected error"
     },
-    "options": {
-        "error": {
-            "entitynotexist": "The Entity is not exist!",
-            "dataformaterror": "Incorrect data format, should be YYYY/MM/DD",
-            "manual_rates_format": "Invalid JSON format. Check your rate values are numbers in arrays.",
-            "unknown": "Unexpected error"
+    "step": {
+      "user": {
+        "data": {
+          "bimonthly_energy": "Bimonthly Energy Entity",
+          "meter_start_day": "Meter Start Day",
+          "billing_mode": "Billing Mode"
         },
-        "step": {
-            "init": {
-                "data": {
-                    "bimonthly_energy": "Bimonthly Energy Entity",
-                    "meter_start_day": "Meter Start Day",
-                    "billing_mode": "Billing Mode",
-                    "manual_rates": "Manual Rate Override (JSON, leave empty to use built-in)"
-                }
-            }
-        }
+        "description": "Please select the energy entity, meter start day, and billing mode",
+        "title": "Set up TaiPower Energy Cost"
+      }
     }
+  },
+  "entity": {
+    "button": {
+      "update_rates": {
+        "name": "Update Taipower Rates"
+      }
+    }
+  },
+  "services": {
+    "update_config": {
+      "name": "Update TaiPower config",
+      "description": "Update TaiPower integration settings (sensor, billing mode, meter start day)",
+      "fields": {
+        "bimonthly_energy": {
+          "name": "Energy sensor entity",
+          "description": "Entity ID of the cumulative energy sensor"
+        },
+        "billing_mode": {
+          "name": "Billing mode",
+          "description": "Billing mode (residential, non_commercial, commercial)"
+        },
+        "meter_start_day": {
+          "name": "Meter start day",
+          "description": "Meter reading start date"
+        }
+      }
+    }
+  }
 }

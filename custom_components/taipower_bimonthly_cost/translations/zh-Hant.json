@@ -1,49 +1,50 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "服務已經設定完成"
-        },
-        "error": {
-            "entitynotexist": "這個實體 (Entity) 不存在!!",
-            "dataformaterror": "日期格式不正確, 應該是 YYYY/MM/DD",
-            "manual_rates_format": "JSON 格式錯誤，請確認費率值為數字陣列",
-            "unknown": "未預期錯誤"
-        },
-        "step": {
-            "user": {
-                "data": {
-                    "bimonthly_energy": "雙月計量電源實體 (Entity)",
-                    "meter_start_day": "電錶抄表日",
-                    "billing_mode": "計費模式"
-                },
-                "description": "請輸入電錶抄表日、計量電源實體以及計費模式",
-                "title": "選擇電錶抄表日、計量電源實體和計費模式"
-            }
-        }
+  "config": {
+    "abort": {
+      "already_configured": "服務已經設定完成"
     },
-    "entity": {
-        "button": {
-            "update_rates": {
-                "name": "手動更新台電費率"
-            }
-        }
+    "error": {
+      "entitynotexist": "這個實體 (Entity) 不存在!!",
+      "dataformaterror": "日期格式不正確, 應該是 YYYY/MM/DD",
+      "unknown": "未預期錯誤"
     },
-    "options": {
-        "error": {
-            "entitynotexist": "這個實體 (Entity) 不存在!!",
-            "dataformaterror": "日期格式不正確, 應該是 YYYY/MM/DD",
-            "manual_rates_format": "JSON 格式錯誤，請確認費率值為數字陣列",
-            "unknown": "未預期錯誤"
+    "step": {
+      "user": {
+        "data": {
+          "bimonthly_energy": "雙月計量電源實體 (Entity)",
+          "meter_start_day": "電錶抄表日",
+          "billing_mode": "計費模式"
         },
-        "step": {
-            "init": {
-                "data": {
-                    "bimonthly_energy": "雙月計量電源實體 (Entity)",
-                    "meter_start_day": "電錶抄表日",
-                    "billing_mode": "計費模式",
-                    "manual_rates": "手動費率覆寫 (JSON，留空使用內建費率)"
-                }
-            }
-        }
+        "description": "請輸入電錶抄表日、計量電源實體以及計費模式",
+        "title": "選擇電錶抄表日、計量電源實體和計費模式"
+      }
     }
+  },
+  "entity": {
+    "button": {
+      "update_rates": {
+        "name": "手動更新台電費率"
+      }
+    }
+  },
+  "services": {
+    "update_config": {
+      "name": "更新台電費率設定",
+      "description": "更新台電二段式電價整合的設定（感測器、計費模式、抄表日）",
+      "fields": {
+        "bimonthly_energy": {
+          "name": "累計電量感測器",
+          "description": "累計用電量的感測器實體 ID"
+        },
+        "billing_mode": {
+          "name": "計費模式",
+          "description": "選擇計費模式（residential: 住宅用, non_commercial: 非營業用, commercial: 營業用）"
+        },
+        "meter_start_day": {
+          "name": "抄表起始日",
+          "description": "電錶抄表起始日期"
+        }
+      }
+    }
+  }
 }
