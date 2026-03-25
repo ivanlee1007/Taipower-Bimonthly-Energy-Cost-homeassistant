@@ -70,6 +70,7 @@ async def async_setup_entry(
 class CostSensor(SensorEntity):
     """Implementation of a energy cost sensor."""
     entity_description: TaiPowerCostSensorDescription
+    entity_registry_enabled_default = True
 
     def __init__(self, hass, entry_data, description, entry_id=None):
         self.entity_description = description
@@ -208,6 +209,7 @@ class RateStatusSensor(SensorEntity):
     """
 
     entity_description: TaiPowerCostSensorDescription
+    entity_registry_enabled_default = True
 
     _attr_icon = "mdi:cash-check"
 
