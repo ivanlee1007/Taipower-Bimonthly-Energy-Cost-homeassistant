@@ -195,6 +195,15 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
 
 def _get_config_value(config_entry, key, default):
-    if config_entry.options:
-        return config_entry.options.get(key, default)
-    return config_entry.data.get(key, default)
+    """Get config value from options first, then data.
+    
+    If options has the key but it's an empty string, fall back to data.
+    This handles legacy entries where empty strings were stored in options.
+    """
+    options_val = config_entry.options.get(key) if config_entry.options else None
+    data_val = config_entry.data.get(key) if config_entry.data else None
+    if options_val not in (None, ""):
+        return options_val
+    if data_val not in (None, ""):
+        return data_val
+    return default

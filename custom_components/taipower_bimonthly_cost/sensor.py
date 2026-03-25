@@ -39,6 +39,20 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_config_value(config_entry, key, default):
+    """Get config value from options first, then data.
+    
+    If options has the key but it's an empty string, fall back to data.
+    """
+    options_val = config_entry.options.get(key) if config_entry.options else None
+    data_val = config_entry.data.get(key) if config_entry.data else None
+    if options_val not in (None, ""):
+        return options_val
+    if data_val not in (None, ""):
+        return data_val
+    return default
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigType, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -47,10 +61,18 @@ async def async_setup_entry(
     try:
         entities = []
         # Check required config exists
-        energy_entity = entry.options.get(CONF_BIMONTHLY_ENERGY)
+        energy_entity = _get_config_value(entry, CONF_BIMONTHLY_ENERGY, "")
         if not energy_entity:
             _LOGGER.warning(
                 "TaiPower: missing 'bimonthly_energy' config. "
+                "Skipping sensor setup. Please configure via Integration -> Options."
+            )
+            return
+
+        meter_start_day = _get_config_value(entry, CONF_METER_START_DAY, "")
+        if not meter_start_day:
+            _LOGGER.warning(
+                "TaiPower: missing 'meter_start_day' config. "
                 "Skipping sensor setup. Please configure via Integration -> Options."
             )
             return
@@ -154,7 +176,12 @@ class EnergyCostSensor(KwhCostSensor):
     """Implementation of a energy cost sensor."""
     def __init__(self, hass, entry_data, description, entry_id=None):
         super().__init__(hass, entry_data, description, entry_id)
-        self._reset_day = entry_data[CONF_METER_START_DAY]
+        self._reset_day = entry_data.get(CONF_METER_START_DAY)
+        if not self._reset_day:
+            _LOGGER.warning(
+                "Missing required config 'meter_start_day' - power_cost sensor will not function. "
+                "Please reconfigure via Integration -> Options."
+            )
 
     async def reset_utility_meter(self, sensor):
         """Send a command."""
