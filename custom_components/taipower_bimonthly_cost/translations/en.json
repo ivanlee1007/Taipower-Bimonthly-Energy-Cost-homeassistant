@@ -27,6 +27,24 @@
       }
     }
   },
+  "options": {
+    "error": {
+      "entitynotexist": "The Entity does not exist!",
+      "dataformaterror": "Incorrect data format",
+      "unknown": "Unexpected error"
+    },
+    "step": {
+      "init": {
+        "data": {
+          "bimonthly_energy": "Bimonthly Energy Entity",
+          "meter_start_day": "Meter Start Day",
+          "billing_mode": "Billing Mode"
+        },
+        "description": "Modify TaiPower settings",
+        "title": "TaiPower Settings"
+      }
+    }
+  },
   "services": {
     "update_config": {
       "name": "Update TaiPower config",

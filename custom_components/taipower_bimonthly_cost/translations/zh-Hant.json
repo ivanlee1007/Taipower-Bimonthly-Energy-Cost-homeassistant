@@ -5,7 +5,7 @@
     },
     "error": {
       "entitynotexist": "這個實體 (Entity) 不存在!!",
-      "dataformaterror": "日期格式不正確, 應該是 YYYY/MM/DD",
+      "dataformaterror": "日期格式不正確, 應該是 YYYY-MM-DD",
       "unknown": "未預期錯誤"
     },
     "step": {
@@ -24,6 +24,24 @@
     "button": {
       "update_rates": {
         "name": "手動更新台電費率"
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "entitynotexist": "這個實體 (Entity) 不存在!!",
+      "dataformaterror": "日期格式不正確",
+      "unknown": "未預期錯誤"
+    },
+    "step": {
+      "init": {
+        "data": {
+          "bimonthly_energy": "雙月計量電源實體 (Entity)",
+          "meter_start_day": "電錶抄表日",
+          "billing_mode": "計費模式"
+        },
+        "description": "修改台電費率設定",
+        "title": "台電費率設定"
       }
     }
   },
