@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
 CONFIG_FLOW_VERSION = 2
 
 DOMAIN = "taipower_bimonthly_cost"
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "button"]
 
 ATTR_BIMONTHLY_ENERGY = "bimonthly energy source"
 ATTR_KWH_COST = "price per kwh"

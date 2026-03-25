@@ -154,6 +154,44 @@ class TaiPowerConfigCard extends HTMLElement {
     this.render();
   }
 
+  _getEnergyEntities() {
+    if (!this._hass) return [];
+    const currentVal = this._options.bimonthly_energy || '';
+    const seen = new Set();
+    const results = [];
+
+    const addEntity = (entity_id, name) => {
+      if (seen.has(entity_id)) return;
+      seen.add(entity_id);
+      results.push({ entity_id, name });
+    };
+
+    // Current value always included (even if filtered out otherwise)
+    if (currentVal) addEntity(currentVal, currentVal);
+
+    for (const [entity_id, st] of Object.entries(this._hass.states)) {
+      if (!entity_id.startsWith('sensor.')) continue;
+      const attrs = st.attributes || {};
+      const unit = (attrs.unit_of_measurement || '').toLowerCase();
+      const id = entity_id.toLowerCase();
+      const name = (attrs.friendly_name || '').toLowerCase();
+
+      // Match: kWh unit, or energy/power keywords in ID or name
+      const isKwh = unit === 'kwh';
+      const isEnergy =
+        id.includes('kwh') || id.includes('energy') || id.includes('power') ||
+        id.includes('累計') || id.includes('電') || id.includes('電量') ||
+        name.includes('kwh') || name.includes('energy') || name.includes('電');
+
+      if (isKwh || isEnergy) {
+        addEntity(entity_id, attrs.friendly_name || entity_id);
+      }
+    }
+
+    results.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    return results;
+  }
+
   _buildRateTable(mode, manualRates) {
     let rateData;
     const isManual = manualRates && manualRates[mode];
@@ -232,7 +270,12 @@ class TaiPowerConfigCard extends HTMLElement {
           <form id="taipower-form">
             <div class="field">
               <label>累計電量實體 (Entity ID)</label>
-              <input type="text" name="bimonthly_energy" value="${this._options.bimonthly_energy || ''}" placeholder="sensor.xxx_kwh"/>
+              <select name="bimonthly_energy">
+                <option value="">-- 請選擇 --</option>
+                ${this._getEnergyEntities().map(e =>
+                  `<option value="${e.entity_id}" ${e.entity_id === this._options.bimonthly_energy ? 'selected' : ''}>${e.name} (${e.entity_id})</option>`
+                ).join('')}
+              </select>
             </div>
             <div class="field">
               <label>計費模式</label>
