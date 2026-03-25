@@ -46,6 +46,15 @@ async def async_setup_entry(
 
     try:
         entities = []
+        # Check required config exists
+        energy_entity = entry.options.get(CONF_BIMONTHLY_ENERGY)
+        if not energy_entity:
+            _LOGGER.warning(
+                "TaiPower: missing 'bimonthly_energy' config. "
+                "Skipping sensor setup. Please configure via Integration -> Options."
+            )
+            return
+
         for description in COST_SENSORS:
             if description.key == "kwh_cost":
                 entities.extend(
@@ -75,7 +84,13 @@ class CostSensor(SensorEntity):
     def __init__(self, hass, entry_data, description, entry_id=None):
         self.entity_description = description
         self._hass = hass
-        self._energy_entity = entry_data[CONF_BIMONTHLY_ENERGY]
+        self._energy_entity = entry_data.get(CONF_BIMONTHLY_ENERGY)
+        if not self._energy_entity:
+            _LOGGER.warning(
+                "Missing required config 'bimonthly_energy' - sensor '%s' will not function. "
+                "Please reconfigure via Integration -> Options.",
+                description.key,
+            )
         self._kwh_cost = None
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
         self._entry_data = entry_data  # keep for manual rates lookup

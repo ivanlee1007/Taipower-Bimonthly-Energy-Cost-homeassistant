@@ -1,0 +1,46 @@
+update_config:
+  name: 更新台電費率設定
+  description: 更新台電雙月電費計算設定（費率、計費模式、抄表日等）
+  fields:
+    entry_id:
+      name: Config Entry ID
+      description: 目標設定項目的 ID（留空則使用第一個可用項目）
+      required: false
+      example: "01KMJGTFF5CN2X1WPAS36P2T7J"
+      selector:
+        text:
+    bimonthly_energy:
+      name: 用電量 Sensor
+      description: 用電量感測器的 entity_id
+      required: false
+      example: "sensor.uss_p130_f5_power_e_s_1"
+      selector:
+        entity:
+          domain: sensor
+    billing_mode:
+      name: 計費模式
+      description: 電費計費模式
+      required: false
+      example: "residential"
+      selector:
+        select:
+          options:
+            - value: residential
+              label: 住宅用電
+            - value: non_commercial
+              label: 非營業用電
+            - value: commercial
+              label: 營業用電
+    meter_start_day:
+      name: 抄表起始日
+      description: 電表抄表起始日期
+      required: false
+      example: "2026-01-15"
+      selector:
+        date:
+    manual_rates:
+      name: 手動費率
+      description: 手動覆蓋費率資料（JSON 格式，留空則使用預設費率）
+      required: false
+      selector:
+        text:

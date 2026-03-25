@@ -148,15 +148,20 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     # Register static path so HA serves the JS file
     src = _get_card_src(hass)
     if src.exists():
-        await hass.http.async_register_static_paths([
-            StaticPathConfig(
-                _CARD_JS_URL,
-                str(src),
-                cache_headers=True,
-            )
-        ])
-        # Register with frontend so Lovelace injects it as <script>
-        frontend.add_extra_js_url(hass, _get_card_js_url(hass))
+        try:
+            await hass.http.async_register_static_paths([
+                StaticPathConfig(
+                    _CARD_JS_URL,
+                    str(src),
+                    cache_headers=True,
+                )
+            ])
+        except RuntimeError:
+            _LOGGER.debug("TaiPower card static path already registered: %s", _CARD_JS_URL)
+        try:
+            frontend.add_extra_js_url(hass, _get_card_js_url(hass))
+        except ValueError:
+            _LOGGER.debug("TaiPower card JS URL already registered: %s", _get_card_js_url(hass))
         _LOGGER.info("TaiPower card registered: %s -> %s", _CARD_JS_URL, src)
     else:
         _LOGGER.warning("TaiPower card JS file not found: %s", src)
@@ -172,6 +177,12 @@ async def async_update_options(hass: HomeAssistant, config_entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload a config entry."""
+    # Clean up frontend JS registration
+    try:
+        frontend.remove_extra_js_url(hass, _get_card_js_url(hass))
+    except (ValueError, AttributeError):
+        pass
+
     unload_ok = all(
         await asyncio.gather(
             *[
