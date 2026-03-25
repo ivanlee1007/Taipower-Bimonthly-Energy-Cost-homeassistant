@@ -15,6 +15,9 @@ from .const import (
     ATTR_USED_DAYS,
     ATTR_BILLING_MODE,
     ATTR_PDF_VERSION,
+    ATTR_RATES_VERSION,
+    ATTR_LAST_UPDATED,
+    ATTR_RATES_AGE_DAYS,
     CONF_BIMONTHLY_ENERGY,
     CONF_METER_START_DAY,
     CONF_BILLING_MODE,
@@ -25,6 +28,8 @@ from .const import (
     BILLING_MODES,
     TaiPowerCostSensorDescription,
     calculate_cost,
+    validate_rates,
+    load_rates_info,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +50,10 @@ async def async_setup_entry(
             if description.key == "power_cost":
                 entities.extend(
                     [EnergyCostSensor(hass, entry.options, description)]
+                )
+            if description.key == "rate_status":
+                entities.extend(
+                    [RateStatusSensor(hass, entry.data, description)]
                 )
 
         async_add_entities(entities)
@@ -165,3 +174,73 @@ class EnergyCostSensor(KwhCostSensor):
             self._reset_day = datetime.strptime(self._reset_day, "%Y-%m-%d")
         except Exception:
             self._reset_day = datetime.strptime(self._reset_day, "%Y/%m/%d")
+
+
+class RateStatusSensor(SensorEntity):
+    """Sensor that shows whether the embedded electricity rates are current.
+
+    States
+    ------
+    up_to_date    – rates_info.json exists, checksums match, data < 6 months
+    rates_changed – checksum mismatch (PDF format may have changed)
+    outdated      – data older than 6 months (PDF may have a newer version)
+    no_info       – rates_info.json missing (first install / local dev)
+    """
+
+    entity_description: TaiPowerCostSensorDescription
+
+    _attr_icon = "mdi:cash-check"
+
+    STATUS_LABELS = {
+        "up_to_date": "✅ 最新",
+        "rates_changed": "⚠️ 費率解析異常",
+        "outdated": "⚠️ 費率可能過期",
+        "no_info": "ℹ️ 尚未驗證",
+    }
+
+    def __init__(self, hass, entry_data, description):
+        self.entity_description = description
+        self._hass = hass
+        self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
+        self._energy_entity = entry_data.get(CONF_BIMONTHLY_ENERGY, "")
+        self._status = "no_info"
+        self._details = {}
+
+    @property
+    def name(self):
+        return "{}-{}".format(self._energy_entity, self.entity_description.key)
+
+    @property
+    def unique_id(self):
+        return "{}-{}".format(self._energy_entity, self.entity_description.key)
+
+    @property
+    def native_value(self):
+        return self.STATUS_LABELS.get(self._status, self._status)
+
+    @property
+    def extra_state_attributes(self):
+        attrs = {
+            ATTR_RATES_VERSION: self._details.get("rates_version", "unknown"),
+            ATTR_LAST_UPDATED: self._details.get("last_updated", "unknown"),
+            ATTR_RATES_AGE_DAYS: self._details.get("age_days"),
+            ATTR_PDF_VERSION: self._details.get("pdf_version", "unknown"),
+            "pdf_url": self._details.get("pdf_url", ""),
+            "billing_mode": self._billing_mode,
+            "status_code": self._status,
+        }
+        if "mismatches" in self._details:
+            attrs["mismatches"] = self._details["mismatches"]
+        return attrs
+
+    async def async_added_to_hass(self):
+        """Validate rates on startup."""
+        self._status, self._details = await self._hass.async_add_executor_job(
+            validate_rates
+        )
+        if self._status != "up_to_date":
+            _LOGGER.warning(
+                "TaiPower rates validation: %s – %s",
+                self._status,
+                self._details,
+            )

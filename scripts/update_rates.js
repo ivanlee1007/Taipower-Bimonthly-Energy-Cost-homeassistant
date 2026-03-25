@@ -18,6 +18,13 @@ const path = require("path");
 const PDF_URL =
   "https://www.taipower.com.tw/media/ba2angqi/各類電價表及計算範例.pdf";
 const OUTPUT_FILE = path.join(__dirname, "..", "rates.json");
+const INFO_OUTPUT = path.join(
+  __dirname,
+  "..",
+  "custom_components",
+  "taipower_bimonthly_cost",
+  "rates_info.json",
+);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +125,8 @@ async function parseRatesFromPDF(parser) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  const crypto = require("crypto");
+
   console.log("⬇  Downloading Taipower rate PDF...");
   const buffer = await fetchPDF(PDF_URL);
   console.log(`   PDF size: ${(buffer.length / 1024).toFixed(1)} KB`);
@@ -130,7 +139,8 @@ async function main() {
   console.log("🔍 Extracting rate tiers...");
   const modes = await parseRatesFromPDF(parser);
 
-  const version = new Date().toISOString().slice(0, 7).replace("-", ""); // e.g. "202603"
+  // ── rates.json (human-readable rates) ──────────────────────────────────────
+  const version = new Date().toISOString().slice(0, 7).replace("-", "");
   const result = {
     version: `parsed_${version}`,
     updated_at: new Date().toISOString(),
@@ -140,7 +150,36 @@ async function main() {
 
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(result, null, 2), "utf-8");
   console.log(`✅ Wrote rates to ${OUTPUT_FILE}`);
-  console.log(JSON.stringify(result, null, 2));
+
+  // ── rates_info.json (for HA integration validation) ────────────────────────
+  // Python _tier_checksum: concatenates f"{rate_summer:.2f}{rate_non_summer:.2f}" per tier, then MD5[:12]
+  // So we build tiers array with both summer and non-summer rates for checksum.
+  function tierChecksum(tiers) {
+    const raw = tiers.map((t) => `${t[0].toFixed(2)}${t[1].toFixed(2)}`).join("");
+    return crypto.createHash("md5").update(raw).digest("hex").slice(0, 12);
+  }
+
+  const pdfVersion = "11410"; // 114年10月版
+  const info = {
+    rates_version: `parsed_${version}`,
+    pdf_version: pdfVersion,
+    pdf_url: PDF_URL,
+    parsed_at: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+    expected_tiers: {},
+  };
+
+  for (const [mode, data] of Object.entries(modes)) {
+    // Build tier tuples: [[rate_summer, rate_non_summer], ...]
+    const tiers = data.summer.map((r, i) => [r, data.non_summer[i]]);
+    info.expected_tiers[mode] = {
+      checksum: tierChecksum(tiers),
+      tier_count: data.summer.length,
+    };
+  }
+
+  fs.writeFileSync(INFO_OUTPUT, JSON.stringify(info, null, 2), "utf-8");
+  console.log(`✅ Wrote rates info to ${INFO_OUTPUT}`);
+  console.log(JSON.stringify(info, null, 2));
 }
 
 main().catch((err) => {

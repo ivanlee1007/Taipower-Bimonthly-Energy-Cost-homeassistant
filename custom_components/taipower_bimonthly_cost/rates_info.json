@@ -1,0 +1,20 @@
+{
+  "rates_version": "parsed_202603",
+  "pdf_version": "11410",
+  "pdf_url": "https://www.taipower.com.tw/media/ba2angqi/各類電價表及計算範例.pdf",
+  "parsed_at": "2026-03-25T07:46:27Z",
+  "expected_tiers": {
+    "residential": {
+      "checksum": "da6d4fd08978",
+      "tier_count": 6
+    },
+    "non_commercial": {
+      "checksum": "da6d4fd08978",
+      "tier_count": 6
+    },
+    "commercial": {
+      "checksum": "258c7367c07b",
+      "tier_count": 5
+    }
+  }
+}
