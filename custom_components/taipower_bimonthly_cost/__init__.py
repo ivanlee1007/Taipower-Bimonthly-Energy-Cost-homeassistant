@@ -34,7 +34,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
     hass.data.setdefault(DOMAIN, {})
 
     # Register static path for config card + Lovelace resource
-    card_path = os.path.join(os.path.dirname(__file__), "..", "dist")
+    card_path = os.path.join(os.path.dirname(__file__), "dist")
     card_file = os.path.join(card_path, "taipower-config-card.js")
     if os.path.isfile(card_file):
         # Cache-bust with file mtime
