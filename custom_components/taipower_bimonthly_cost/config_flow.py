@@ -40,9 +40,8 @@ class TaiPowerCostFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = CONFIG_FLOW_VERSION
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry: ConfigEntry):
+    @classmethod
+    def async_get_options_flow(cls, config_entry: ConfigEntry):
         """ get option flow """
         return TaiPowerCostOptionsFlow(config_entry)
 

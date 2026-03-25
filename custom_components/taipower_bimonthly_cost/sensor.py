@@ -112,7 +112,7 @@ class KwhCostSensor(CostSensor):
 
         if self._hass.states.get(self._energy_entity):
             state = self._hass.states.get(self._energy_entity).state
-            if state == "unknown":
+            if state in ("unknown", "unavailable"):
                 return None
             if isinstance(state, (float, int, str)):
                 is_summer = now.month in [6, 7, 8, 9]
@@ -146,7 +146,7 @@ class EnergyCostSensor(KwhCostSensor):
 
         if self._hass.states.get(self._energy_entity):
             state = self._hass.states.get(self._energy_entity).state
-            if state == "unknown":
+            if state in ("unknown", "unavailable"):
                 return None
             if isinstance(state, (float, int, str)):
                 is_summer = now.month in [6, 7, 8, 9]
