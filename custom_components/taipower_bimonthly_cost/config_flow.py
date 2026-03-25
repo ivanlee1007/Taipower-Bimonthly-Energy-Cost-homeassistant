@@ -39,7 +39,6 @@ class TaiPowerCostFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TaiPower Energy Cost integration."""
 
     VERSION = CONFIG_FLOW_VERSION
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     @staticmethod
     @callback
@@ -79,10 +78,9 @@ class TaiPowerCostFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_BIMONTHLY_ENERGY): selector.selector(
                     {"entity": {"domain": "sensor"}},
                 ),
-                # pylint: disable=unnecessary-lambda
                 vol.Required(
                     CONF_METER_START_DAY,
-                    default=lambda: datetime.now().strftime("%Y-%m-%d")): selector.selector(
+                    default=datetime.now().strftime("%Y-%m-%d")): selector.selector(
                         {"date": {}},
                     ),
                 vol.Required(
