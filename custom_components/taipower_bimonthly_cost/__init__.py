@@ -5,6 +5,7 @@ import os
 
 import voluptuous as vol
 
+from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -31,17 +32,22 @@ async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the TaiPower component."""
     hass.data.setdefault(DOMAIN, {})
 
-    # Register static path for config card
+    # Register static path for config card + Lovelace resource
     card_path = os.path.join(os.path.dirname(__file__), "..", "dist")
     card_file = os.path.join(card_path, "taipower-config-card.js")
     if os.path.isfile(card_file):
+        # Cache-bust with file mtime
+        mtime = int(os.path.getmtime(card_file))
+        card_url = f"/taipower_static/taipower-config-card.js?v={mtime}"
         await hass.http.async_register_static_paths([
             StaticPathConfig(
-                "/taipower_static/taipower-config-card.js",
+                card_url,
                 card_file,
                 cache_headers=True,
             )
         ])
+        # Register as Lovelace resource so custom element loads
+        frontend.add_extra_js_url(hass, card_url)
 
     async def handle_update_config(call):
         """Handle the update_config service call."""
