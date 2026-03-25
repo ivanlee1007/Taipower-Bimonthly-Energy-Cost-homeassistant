@@ -9,11 +9,14 @@ Calculate Taipower (Taiwan Power Company) bi-monthly (60 days) bill amount from 
 
 - **三種計費模式**：住宅用、非營業用、營業用（表燈非時間電價）
 - **自動累進計價**：正確計算各級距累進費用，不只給平均單價
-- **自動費率更新**：透過台電官方 PDF 自動解析最新費率（`scripts/update_rates.js`）
+- **自動費率更新**：透過台電官方 PDF 自動解析最新費率
+- **一鍵更新按鈕**：裝置頁內建按鈕，一鍵從台電 PDF 重新抓取費率
 - **費率狀態監控**：`rate_status` sensor 自動檢測費率是否過期或異常
 - **手動費率覆寫**：當 PDF 解析失敗時，可手動貼上 JSON 覆寫費率
 - **多電表支援**：可設定多個台電電表來源分別計算
 - **能源面板整合**：提供 `kwh_cost` sensor 給 HA 內建能源面板作為電費單價
+- **裝置頁整合**：所有實體（3 個 sensor + 1 個 button）自動歸入同一裝置頁
+- **設定卡片**：提供 Lovelace 自訂卡片，不需進 Options 流程即可修改設定
 
 ### 📋 當前費率版本
 
@@ -43,13 +46,16 @@ Calculate Taipower (Taiwan Power Company) bi-monthly (60 days) bill amount from 
 | 電錶抄表日 | 本期電費計算週期的第一天（YYYY-MM-DD，過去日期，即上次抄表日） |
 | 計費模式 | `住宅用` / `非營業用` / `營業用`，三選一 |
 
-安裝完成後會產生三個 sensor：
+安裝完成後會產生以下實體，並自動歸入「台電雙月電費」裝置頁：
 
-| Sensor | 說明 |
-|--------|------|
-| `sensor.<name>_power_cost` | 本期累計電費（TWD） |
-| `sensor.<name>_kwh_cost` | 當前電度單價（TWD/kWh） |
-| `sensor.<name>_rate_status` | 費率狀態監控 |
+| 實體 | 類型 | 說明 |
+|------|------|------|
+| `sensor.<name>_power_cost` | sensor | 本期累計電費（TWD） |
+| `sensor.<name>_kwh_cost` | sensor | 當前電度單價（TWD/kWh） |
+| `sensor.<name>_rate_status` | sensor | 費率狀態監控 |
+| `button.<name>_update_taipower_rates` | button | 一鍵重新解析台電費率 PDF |
+
+所有實體預設啟用，安裝後可在 **設定 → 裝置與服務 → 台電雙月電費** 的裝置頁內看到全部實體。
 
 ---
 
@@ -62,27 +68,60 @@ Calculate Taipower (Taiwan Power Company) bi-monthly (60 days) bill amount from 
 |-- custom_components/
 |   |-- taipower_bimonthly_cost/
 |       |-- __init__.py
+|       |-- button.py
 |       |-- config_flow.py
 |       |-- const.py
 |       |-- sensor.py
 |       |-- manifest.json
+|       |-- scripts/
+|       |   |-- package.json
+|       |   |-- update_rates.js
 |       |-- translations/
 |           |-- en.json
 |           |-- zh-Hant.json
+|-- dist/
+    |-- taipower-config-card.js
 ```
 
 然後重啟 Home Assistant，並至 HA → 設定 → 裝置與服務 → 整合 → 新增整合，搜尋 `Taipower bimonthly cost`。
 
 ---
 
-## 3) 選項設定 - Options
+## 3) 設定方式
+
+### 3a) Options 流程（安裝時）
 
 安裝完成後可隨時修改設定：HA → 整合 → 台電雙月電費 → 選項（gear icon）
 
 | 選項 | 說明 |
 |------|------|
 | 計費模式 | 可隨時切換 住宅用/非營業用/營業用 |
-| **手動費率覆寫** | JSON 格式，留空則使用內建費率（11410 版本） |
+| 累計電量感測器 | 設定來源 kWh sensor |
+| 抄表起始日 | 電錶抄表日（YYYY-MM-DD） |
+| 手動費率覆寫 | JSON 格式，留空則使用內建費率 |
+
+### 3b) 設定卡片（Lovelace）
+
+在 dashboard 加入自訂卡片：
+
+```yaml
+type: custom:taipower-config-card
+```
+
+卡片會自動抓取當前設定，可直接修改計費模式、感測器、抄表日，並儲存。
+
+### 3c) 自動費率更新按鈕
+
+裝置頁內建「手動更新台電費率」按鈕，按下後自動：
+1. 從台電官方 PDF 下載最新費率
+2. 解析並更新本地費率檔
+3. 重新載入整合設定
+
+> 前提：HA 主機需安裝 Node.js（用於執行 `update_rates.js`）
+
+---
+
+## 4) 手動費率覆寫
 
 **手動費率覆寫 JSON 格式範例：**
 
@@ -102,7 +141,7 @@ Calculate Taipower (Taiwan Power Company) bi-monthly (60 days) bill amount from 
 
 ---
 
-## 4) 自動費率更新 - Auto Rate Update
+## 5) 自動費率更新腳本
 
 `scripts/update_rates.js` 可從台電官方 PDF 自動解析最新費率並更新內建費率。
 
@@ -140,6 +179,12 @@ node update_rates.js          # 解析 PDF → 產生 rates.json
 | `manual_override` | 是否使用手動覆寫（true/false） |
 | `status_code` | 狀態代碼：`up_to_date` / `outdated` / `rates_changed` / `no_info` |
 
+### `button.<name>_update_taipower_rates`
+
+| 屬性 | 說明 |
+|------|------|
+| `last_result` | 上次按鈕執行結果（成功/失敗訊息） |
+
 ---
 
 ## Appendix I (附錄 I): 如何新增即時 kWh 的 `utility meter` sensor？
@@ -173,3 +218,19 @@ sensor:
 HA 2021.8.0+ 內建能源面板 → 右上角設定 → 能源設定 → 電網耗能 → 新增項目 → 選擇獨立價格實體 → 選 `sensor.<name>_kwh_cost`。
 
 （能源面板最多需要 2 小時後才會開始顯現數值。）
+
+---
+
+## Changelog / 版本紀錄
+
+| 版本 | 日期 | 說明 |
+|------|------|------|
+| v1.4.0 | 2026-03-25 | 新增裝置頁整合（device_info）、sensor 預設啟用、一鍵更新按鈕、設定卡片 |
+| v1.3.8 | 2026-03-25 | 卡片雙頁籤佈局 |
+| v1.3.6 | 2026-03-25 | 手動更新按鈕 + 累計電量下拉選單 |
+| v1.3.5 | 2026-03-25 | 卡片安裝移到 async_setup_entry |
+| v1.3.2 | 2026-03-25 | 翻譯修正 |
+| v1.3.0 | 2026-03-25 | 手動費率覆寫 UI |
+| v1.2.0 | 2026-03-25 | 選項流程 + 自訂卡片並存 |
+| v1.1.0 | 2026-03-25 | 自訂服務 bypass 選項流程 500 錯誤 |
+| v1.0.0 | 2026-03-25 | 首次穩定版（PDF 解析、三種計費模式、費率監控） |
