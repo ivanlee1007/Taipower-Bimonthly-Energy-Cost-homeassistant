@@ -142,11 +142,12 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                     except json.JSONDecodeError as e:
                         raise ValueError(f"Invalid JSON: {e}")
 
-                # Build new options from user input
+                # Build new options from user input, falling back to existing values
+                original_data = self._config_entry.data or {}
                 new_options = {
-                    CONF_BIMONTHLY_ENERGY: energy_entity,
+                    CONF_BIMONTHLY_ENERGY: energy_entity or original_data.get(CONF_BIMONTHLY_ENERGY, ""),
                     CONF_BILLING_MODE: user_input.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
-                    CONF_METER_START_DAY: user_input.get(CONF_METER_START_DAY, ""),
+                    CONF_METER_START_DAY: user_input.get(CONF_METER_START_DAY, "") or original_data.get(CONF_METER_START_DAY, ""),
                 }
                 if manual_rates:
                     new_options[CONF_MANUAL_RATES] = manual_rates
@@ -169,19 +170,42 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
 
     def _get_options_schema(self):
         """Build options schema with current values as defaults."""
+        from datetime import date as _date
+        
         # Get current manual rates as JSON string for textarea
         manual_rates = _get_config_value(self._config_entry, CONF_MANUAL_RATES, {})
         manual_rates_json = json.dumps(manual_rates, ensure_ascii=False, indent=2) if manual_rates else ""
+
+        # Try to get current runtime values as ultimate fallback
+        runtime_entity = ""
+        runtime_meter_day = ""
+        try:
+            from .const import DOMAIN as _DOMAIN
+            entry_data = self.hass.data.get(_DOMAIN, {}).get(self._config_entry.entry_id, {})
+            runtime_entity = entry_data.get(CONF_BIMONTHLY_ENERGY, "")
+            runtime_meter_day = entry_data.get(CONF_METER_START_DAY, "")
+        except Exception:
+            pass
+
+        entity_default = (
+            _get_config_value(self._config_entry, CONF_BIMONTHLY_ENERGY, "")
+            or runtime_entity
+        )
+        meter_day_default = (
+            _get_config_value(self._config_entry, CONF_METER_START_DAY, "")
+            or runtime_meter_day
+            or _date.today().strftime("%Y-%m-%d")
+        )
 
         return vol.Schema(
             {
                 vol.Required(
                     CONF_BIMONTHLY_ENERGY,
-                    default=_get_config_value(self._config_entry, CONF_BIMONTHLY_ENERGY, ""),
+                    default=entity_default,
                 ): selector.selector({"entity": {"domain": "sensor"}}),
                 vol.Required(
                     CONF_METER_START_DAY,
-                    default=_get_config_value(self._config_entry, CONF_METER_START_DAY, ""),
+                    default=meter_day_default,
                 ): selector.selector({"date": {}}),
                 vol.Required(
                     CONF_BILLING_MODE,
@@ -201,8 +225,20 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
 
 
 def _get_config_value(config_entry, key, default):
-    """Get config value from options first, then data."""
-    if config_entry.options:
-        return config_entry.options.get(key, default)
-    return config_entry.data.get(key, default)
+    """Get config value from options first, then data.
+    
+    If options has the key but it's an empty string, fall back to data.
+    This handles the case where a previous bug cleared data and stored
+    empty strings in options.
+    """
+    options_val = config_entry.options.get(key) if config_entry.options else None
+    data_val = config_entry.data.get(key) if config_entry.data else None
+    
+    # Prefer options value if it's non-empty
+    if options_val not in (None, ""):
+        return options_val
+    # Fall back to data value
+    if data_val not in (None, ""):
+        return data_val
+    return default
 
