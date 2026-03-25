@@ -1,7 +1,7 @@
 """Config flow for TaiPower Energy Cost integration."""
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 import voluptuous as vol
 
@@ -142,20 +142,16 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                     except json.JSONDecodeError as e:
                         raise ValueError(f"Invalid JSON: {e}")
 
-                # Build new options from user input, falling back to existing values
-                original_data = self._config_entry.data or {}
+                # Build new options from user input
                 new_options = {
-                    CONF_BIMONTHLY_ENERGY: energy_entity or original_data.get(CONF_BIMONTHLY_ENERGY, ""),
+                    CONF_BIMONTHLY_ENERGY: energy_entity,
                     CONF_BILLING_MODE: user_input.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
-                    CONF_METER_START_DAY: user_input.get(CONF_METER_START_DAY, "") or original_data.get(CONF_METER_START_DAY, ""),
+                    CONF_METER_START_DAY: user_input.get(CONF_METER_START_DAY, ""),
                 }
                 if manual_rates:
                     new_options[CONF_MANUAL_RATES] = manual_rates
 
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, options=new_options,
-                )
-                return self.async_create_entry(title="", data={})
+                return self.async_create_entry(title="", data=new_options)
             except ValueError as e:
                 errors[CONF_MANUAL_RATES] = str(e)
             except Exception:  # pylint: disable=broad-except
@@ -170,57 +166,26 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
 
     def _get_options_schema(self):
         """Build options schema with current values as defaults."""
-        from datetime import date as _date
-        
-        # Get current manual rates as JSON string for textarea
-        manual_rates = _get_config_value(self._config_entry, CONF_MANUAL_RATES, {})
-        manual_rates_json = json.dumps(manual_rates, ensure_ascii=False, indent=2) if manual_rates else ""
-
-        # Try to get current runtime values as ultimate fallback
-        runtime_entity = ""
-        runtime_meter_day = ""
-        try:
-            from .const import DOMAIN as _DOMAIN
-            entry_data = self.hass.data.get(_DOMAIN, {}).get(self._config_entry.entry_id, {})
-            runtime_entity = entry_data.get(CONF_BIMONTHLY_ENERGY, "")
-            runtime_meter_day = entry_data.get(CONF_METER_START_DAY, "")
-        except Exception:
-            pass
-
-        entity_default = (
-            _get_config_value(self._config_entry, CONF_BIMONTHLY_ENERGY, "")
-            or runtime_entity
-        )
-        meter_day_default = (
-            _get_config_value(self._config_entry, CONF_METER_START_DAY, "")
-            or runtime_meter_day
-            or _date.today().strftime("%Y-%m-%d")
-        )
-
-        return vol.Schema(
+        schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_BIMONTHLY_ENERGY,
-                    default=entity_default,
-                ): selector.selector({"entity": {"domain": "sensor"}}),
-                vol.Required(
-                    CONF_METER_START_DAY,
-                    default=meter_day_default,
-                ): selector.selector({"date": {}}),
-                vol.Required(
-                    CONF_BILLING_MODE,
-                    default=_get_config_value(self._config_entry, CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
-                ): selector.selector(
+                vol.Required(CONF_BIMONTHLY_ENERGY, default=""): selector.selector(
+                    {"entity": {"domain": "sensor"}}
+                ),
+                vol.Required(CONF_METER_START_DAY, default=date.today().isoformat()): selector.selector(
+                    {"date": {}}
+                ),
+                vol.Required(CONF_BILLING_MODE, default=DEFAULT_BILLING_MODE): selector.selector(
                     {"select": {"options": [
                         {"value": k, "label": v["name"]}
                         for k, v in BILLING_MODES.items()
-                    ]}},
+                    ]}}
                 ),
-                vol.Optional(
-                    CONF_MANUAL_RATES,
-                    default=manual_rates_json,
-                ): str,
+                vol.Optional(CONF_MANUAL_RATES, default=""): str,
             }
+        )
+        return self.add_suggested_values_to_schema(
+            schema,
+            self._config_entry.options,
         )
 
 
