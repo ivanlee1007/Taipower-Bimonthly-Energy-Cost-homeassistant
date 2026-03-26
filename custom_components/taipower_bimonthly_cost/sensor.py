@@ -296,6 +296,7 @@ class RateStatusSensor(SensorEntity):
         self._hass = hass
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
         self._energy_entity = entry_data.get(CONF_BIMONTHLY_ENERGY, "")
+        self._start_day = entry_data.get(CONF_METER_START_DAY, "")
         self._entry_data = entry_data  # for manual override detection
         self._entry_id = entry_id
         self._status = "no_info"
@@ -335,7 +336,10 @@ class RateStatusSensor(SensorEntity):
             ATTR_RATES_AGE_DAYS: self._details.get("age_days"),
             ATTR_PDF_VERSION: self._details.get("pdf_version", "unknown"),
             "pdf_url": self._details.get("pdf_url", ""),
+            ATTR_BIMONTHLY_ENERGY: self._energy_entity,
+            ATTR_START_DAY: self._start_day,
             "billing_mode": self._billing_mode,
+            CONF_MANUAL_RATES: manual,
             "status_code": self._status,
             "manual_override": manual_override,
         }
