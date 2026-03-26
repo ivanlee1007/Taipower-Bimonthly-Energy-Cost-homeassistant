@@ -28,7 +28,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.19";
+    this._version = "1.5.20";
   }
 
   setConfig(config) {
@@ -39,14 +39,35 @@ class TaiPowerConfigCard extends HTMLElement {
     this._render();
   }
 
+  _eventPath(ev) {
+    if (typeof ev.composedPath === "function") {
+      return ev.composedPath();
+    }
+    const path = [];
+    let node = ev.target;
+    while (node) {
+      path.push(node);
+      node = node.parentNode || node.host || null;
+    }
+    path.push(window);
+    return path;
+  }
+
+  _pathFindById(path, id) {
+    return path.find((node) => node instanceof Element && node.id === id) || null;
+  }
+
+  _pathFindByClass(path, className) {
+    return path.find((node) => node instanceof Element && node.classList?.contains(className)) || null;
+  }
+
   connectedCallback() {
     if (this._delegatedClickBound) return;
     this._delegatedClickBound = true;
     this.addEventListener("click", async (ev) => {
-      const target = ev.target instanceof Element ? ev.target : null;
-      if (!target) return;
+      const path = this._eventPath(ev);
 
-      const tabBtn = target.closest(".tab");
+      const tabBtn = this._pathFindByClass(path, "tab");
       if (tabBtn && this.contains(tabBtn)) {
         this._tab = tabBtn.dataset.tab;
         this._message = "";
@@ -56,28 +77,31 @@ class TaiPowerConfigCard extends HTMLElement {
         return;
       }
 
-      const saveBtn = target.closest("#tp-save");
+      const saveBtn = this._pathFindById(path, "tp-save");
       if (saveBtn && this.contains(saveBtn)) {
         ev.preventDefault();
         await this._saveSettings();
         return;
       }
 
-      const applyBtn = target.closest("#tp-apply-rates");
+      const applyBtn = this._pathFindById(path, "tp-apply-rates");
       if (applyBtn && this.contains(applyBtn)) {
         ev.preventDefault();
+        this._message = "已偵測到套用費率按下";
+        this._error = "";
+        this._render();
         await this._applyRates();
         return;
       }
 
-      const resetRatesBtn = target.closest("#tp-reset-rates");
+      const resetRatesBtn = this._pathFindById(path, "tp-reset-rates");
       if (resetRatesBtn && this.contains(resetRatesBtn)) {
         ev.preventDefault();
         await this._resetRates();
         return;
       }
 
-      const resetBtn = target.closest("#tp-reset");
+      const resetBtn = this._pathFindById(path, "tp-reset");
       if (resetBtn && this.contains(resetBtn)) {
         ev.preventDefault();
         this._editConfig = {
