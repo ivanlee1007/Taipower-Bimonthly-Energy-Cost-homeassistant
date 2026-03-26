@@ -12,6 +12,7 @@ class TaiPowerConfigCard extends HTMLElement {
     this._message = "";
     this._userEditing = false;
     this._dirty = false;
+    this._pendingSync = false;
     this._tab = "rates";
     this._config = {
       bimonthly_energy: "",
@@ -25,7 +26,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.9";
+    this._version = "1.5.10";
   }
 
   setConfig(config) {
@@ -42,6 +43,16 @@ class TaiPowerConfigCard extends HTMLElement {
       this._initialized = true;
       this._syncFromHass();
       this._render();
+      return;
+    }
+
+    if (this._pendingSync) {
+      if (this._backendMatchesLocalConfig()) {
+        this._pendingSync = false;
+        this._dirty = false;
+        this._syncFromHass();
+        this._render();
+      }
       return;
     }
 
@@ -79,19 +90,49 @@ class TaiPowerConfigCard extends HTMLElement {
     return { powerCost, kwhCost, rateStatus };
   }
 
-  _syncFromHass() {
+  _buildBackendSnapshot() {
     const { powerCost, kwhCost, rateStatus } = this._findReferenceSensors();
     const ref = powerCost || kwhCost;
-    if (ref) {
-      const attrs = ref.stateObj.attributes || {};
-      const next = {
-        bimonthly_energy:
-          attrs["bimonthly energy source"] || attrs.bimonthly_energy || "",
-        billing_mode: attrs.billing_mode || "residential",
-        meter_start_day:
-          String(attrs["start day"] || attrs.meter_start_day || ""),
-        manual_rates: attrs.manual_rates || null,
-      };
+    const config = ref
+      ? {
+          bimonthly_energy:
+            ref.stateObj.attributes?.["bimonthly energy source"] || ref.stateObj.attributes?.bimonthly_energy || "",
+          billing_mode: ref.stateObj.attributes?.billing_mode || "residential",
+          meter_start_day: String(ref.stateObj.attributes?.["start day"] || ref.stateObj.attributes?.meter_start_day || ""),
+          manual_rates: ref.stateObj.attributes?.manual_rates || null,
+        }
+      : null;
+
+    const rates = rateStatus
+      ? {
+          rates_version: rateStatus.stateObj.attributes?.rates_version || "—",
+          rates_age_days: rateStatus.stateObj.attributes?.rates_age_days ?? "—",
+          manual_override: !!rateStatus.stateObj.attributes?.manual_override,
+        }
+      : null;
+
+    return { config, rates };
+  }
+
+  _jsonEqual(a, b) {
+    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  }
+
+  _backendMatchesLocalConfig() {
+    const snap = this._buildBackendSnapshot();
+    if (!snap.config) return false;
+    return (
+      snap.config.bimonthly_energy === (this._config.bimonthly_energy || "") &&
+      snap.config.billing_mode === (this._config.billing_mode || "residential") &&
+      snap.config.meter_start_day === String(this._config.meter_start_day || "") &&
+      this._jsonEqual(snap.config.manual_rates, this._config.manual_rates || null)
+    );
+  }
+
+  _syncFromHass() {
+    const snap = this._buildBackendSnapshot();
+    if (snap.config) {
+      const next = snap.config;
       this._config = next;
       this._editConfig = {
         ...next,
@@ -99,13 +140,8 @@ class TaiPowerConfigCard extends HTMLElement {
       };
     }
 
-    if (rateStatus) {
-      const attrs = rateStatus.stateObj.attributes || {};
-      this._ratesInfo = {
-        rates_version: attrs.rates_version || "—",
-        rates_age_days: attrs.rates_age_days ?? "—",
-        manual_override: !!attrs.manual_override,
-      };
+    if (snap.rates) {
+      this._ratesInfo = snap.rates;
     }
   }
 
@@ -632,6 +668,7 @@ class TaiPowerConfigCard extends HTMLElement {
         this._message = "已重設為目前設定";
         this._userEditing = false;
         this._dirty = false;
+        this._pendingSync = false;
         this._render();
       });
     }
@@ -708,8 +745,9 @@ class TaiPowerConfigCard extends HTMLElement {
         ...this._config,
         manual_rates_text: manualRates ? JSON.stringify(manualRates, null, 2) : "",
       };
-      this._message = "設定已送出，整合會自動重載。";
-      this._dirty = false;
+      this._message = "設定已送出，等待整合同步。";
+      this._dirty = true;
+      this._pendingSync = true;
     } catch (err) {
       console.error("[TaiPower Config] save failed:", err);
       this._error = `儲存失敗：${err?.message || err}`;
@@ -756,8 +794,9 @@ class TaiPowerConfigCard extends HTMLElement {
       this._config.manual_rates = currentManual;
       this._editConfig.manual_rates = currentManual;
       this._editConfig.manual_rates_text = JSON.stringify(currentManual, null, 2);
-      this._message = "費率已更新。";
-      this._dirty = false;
+      this._message = "費率已送出，等待整合同步。";
+      this._dirty = true;
+      this._pendingSync = true;
     } catch (err) {
       console.error("[TaiPower Config] apply rates failed:", err);
       this._error = `套用費率失敗：${err?.message || err}`;
@@ -788,8 +827,9 @@ class TaiPowerConfigCard extends HTMLElement {
       this._config.manual_rates = nextManual;
       this._editConfig.manual_rates = nextManual;
       this._editConfig.manual_rates_text = nextManual ? JSON.stringify(nextManual, null, 2) : "";
-      this._message = "已恢復預設費率。";
-      this._dirty = false;
+      this._message = "已送出恢復預設，等待整合同步。";
+      this._dirty = true;
+      this._pendingSync = true;
     } catch (err) {
       console.error("[TaiPower Config] reset rates failed:", err);
       this._error = `恢復預設失敗：${err?.message || err}`;
