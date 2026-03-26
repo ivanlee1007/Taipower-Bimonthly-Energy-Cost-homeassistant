@@ -166,6 +166,12 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
 
     def _get_options_schema(self):
         """Build options schema with current values as defaults."""
+        manual_rates = _get_config_value(self._config_entry, CONF_MANUAL_RATES, None)
+        if isinstance(manual_rates, dict):
+            manual_rates_text = json.dumps(manual_rates, ensure_ascii=False, indent=2)
+        else:
+            manual_rates_text = ""
+
         schema = vol.Schema(
             {
                 vol.Required(CONF_BIMONTHLY_ENERGY, default=""): selector.selector(
@@ -183,10 +189,13 @@ class TaiPowerCostOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_MANUAL_RATES, default=""): str,
             }
         )
-        return self.add_suggested_values_to_schema(
-            schema,
-            self._config_entry.options,
-        )
+        suggested = {
+            CONF_BIMONTHLY_ENERGY: _get_config_value(self._config_entry, CONF_BIMONTHLY_ENERGY, ""),
+            CONF_METER_START_DAY: _get_config_value(self._config_entry, CONF_METER_START_DAY, date.today().isoformat()),
+            CONF_BILLING_MODE: _get_config_value(self._config_entry, CONF_BILLING_MODE, DEFAULT_BILLING_MODE),
+            CONF_MANUAL_RATES: manual_rates_text,
+        }
+        return self.add_suggested_values_to_schema(schema, suggested)
 
 
 def _get_config_value(config_entry, key, default):

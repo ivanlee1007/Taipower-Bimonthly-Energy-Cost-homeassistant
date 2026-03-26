@@ -28,7 +28,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.26";
+    this._version = "1.5.29";
   }
 
   setConfig(config) {
@@ -343,13 +343,23 @@ class TaiPowerConfigCard extends HTMLElement {
   _getEffectiveRates(mode) {
     const meta = this._getModeMeta(mode);
     const manual = this._editConfig.manual_rates || this._config.manual_rates || null;
-    if (manual && manual[mode] && Array.isArray(manual[mode].summer) && Array.isArray(manual[mode].non_summer)) {
+    const hasAnyManual = !!(manual && Object.keys(manual).length);
+    const hasCurrentManual = !!(
+      manual &&
+      manual[mode] &&
+      Array.isArray(manual[mode].summer) &&
+      Array.isArray(manual[mode].non_summer)
+    );
+
+    if (hasCurrentManual) {
       return {
         name: meta.name,
         thresholds: meta.thresholds,
         summer: manual[mode].summer,
         non_summer: manual[mode].non_summer,
         isManual: true,
+        hasAnyManual: true,
+        hasCurrentManual: true,
       };
     }
     return {
@@ -358,6 +368,8 @@ class TaiPowerConfigCard extends HTMLElement {
       summer: meta.summer,
       non_summer: meta.non_summer,
       isManual: false,
+      hasAnyManual,
+      hasCurrentManual: false,
     };
   }
 
@@ -395,7 +407,7 @@ class TaiPowerConfigCard extends HTMLElement {
           <div class="section-title">📊 費率表 — ${this._esc(rateData.name)}</div>
           <div class="section-subtitle">目前季節：${isSummer ? "☀️ 夏月" : "❄️ 非夏月"}</div>
         </div>
-        <div class="badge ${rateData.isManual ? "warn" : "ok"}">${rateData.isManual ? "手動覆蓋中" : "預設費率"}</div>
+        <div class="badge ${rateData.hasAnyManual ? "warn" : "ok"}">${rateData.hasCurrentManual ? "手動覆蓋中" : rateData.hasAnyManual ? "其他模式仍有手動覆蓋" : "預設費率"}</div>
       </div>
 
       <table class="rate-table">
@@ -416,7 +428,7 @@ class TaiPowerConfigCard extends HTMLElement {
 
       <div class="actions rate-actions">
         <button id="tp-apply-rates" class="primary" ${(this._saving || (this._pendingSync && this._activeAction === "apply_rates")) ? "disabled" : ""}>${this._saving && this._activeAction === "apply_rates" ? "送出中..." : this._pendingSync && this._activeAction === "apply_rates" ? "等待同步..." : "💾 套用費率"}</button>
-        ${rateData.isManual ? `<button id="tp-reset-rates" class="secondary" ${(this._saving || (this._pendingSync && this._activeAction === "reset_rates")) ? "disabled" : ""}>${this._saving && this._activeAction === "reset_rates" ? "送出中..." : this._pendingSync && this._activeAction === "reset_rates" ? "等待同步..." : "↩️ 恢復預設"}</button>` : ""}
+        ${rateData.hasAnyManual ? `<button id="tp-reset-rates" class="secondary" ${(this._saving || (this._pendingSync && this._activeAction === "reset_rates")) ? "disabled" : ""}>${this._saving && this._activeAction === "reset_rates" ? "送出中..." : this._pendingSync && this._activeAction === "reset_rates" ? "等待同步..." : "↩️ 清除所有手動覆蓋"}</button>` : ""}
       </div>
     `;
   }
@@ -908,10 +920,9 @@ class TaiPowerConfigCard extends HTMLElement {
   async _resetRates() {
     if (!this._hass) return;
 
-    const mode = this._editConfig.billing_mode || "residential";
-    const currentManual = { ...(this._normalizeManualRates(this._config.manual_rates) || {}) };
-    delete currentManual[mode];
-    const nextManual = this._normalizeManualRates(currentManual);
+    // Reset means clearing all manual overrides so both the rate table and the
+    // settings JSON textarea return to true defaults with no stale leftovers.
+    const nextManual = null;
 
     this._saving = true;
     this._activeAction = "reset_rates";
@@ -925,7 +936,7 @@ class TaiPowerConfigCard extends HTMLElement {
       });
       this._config.manual_rates = nextManual;
       this._editConfig.manual_rates = nextManual;
-      this._editConfig.manual_rates_text = nextManual ? JSON.stringify(nextManual, null, 2) : "";
+      this._editConfig.manual_rates_text = "";
       this._message = "已送出恢復預設，等待整合同步。";
       this._dirty = true;
       this._pendingSync = true;
