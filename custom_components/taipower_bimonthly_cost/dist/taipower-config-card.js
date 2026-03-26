@@ -1,29 +1,30 @@
 /**
  * TaiPower Config Card
- * Stable plain-DOM version.
- *
- * Goals:
- * 1. Card must appear reliably once the bundled JS is loaded.
- * 2. Avoid broken HA config_entries REST calls.
- * 3. Use current sensor attributes + service call for a practical config UI.
+ * Stable plain-DOM version with restored dual tabs.
  */
 class TaiPowerConfigCard extends HTMLElement {
   constructor() {
     super();
     this._hass = null;
     this._initialized = false;
-    this._rendered = false;
     this._saving = false;
     this._error = "";
     this._message = "";
     this._userEditing = false;
+    this._tab = "rates";
     this._config = {
       bimonthly_energy: "",
       billing_mode: "residential",
       meter_start_day: "",
+      manual_rates: null,
     };
     this._editConfig = { ...this._config };
-    this._version = "1.5.7";
+    this._ratesInfo = {
+      rates_version: "—",
+      rates_age_days: "—",
+      manual_override: false,
+    };
+    this._version = "1.5.8";
   }
 
   setConfig(config) {
@@ -50,7 +51,7 @@ class TaiPowerConfigCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 6;
+    return this._tab === "rates" ? 10 : 8;
   }
 
   _esc(value) {
@@ -61,36 +62,65 @@ class TaiPowerConfigCard extends HTMLElement {
       .replace(/"/g, "&quot;");
   }
 
-  _findPowerCostEntity() {
+  _findReferenceSensors() {
     const states = this._hass?.states || {};
+    let powerCost = null;
+    let kwhCost = null;
+    let rateStatus = null;
+
     for (const [entityId, stateObj] of Object.entries(states)) {
       if (!entityId.startsWith("sensor.")) continue;
-      const attrs = stateObj.attributes || {};
-      if (attrs["bimonthly energy source"] && attrs["start day"] && attrs.billing_mode) {
-        return { entityId, stateObj };
-      }
+      if (!powerCost && entityId.endsWith("_power_cost")) powerCost = { entityId, stateObj };
+      if (!kwhCost && entityId.endsWith("_kwh_cost")) kwhCost = { entityId, stateObj };
+      if (!rateStatus && entityId.endsWith("_rate_status")) rateStatus = { entityId, stateObj };
     }
-    return null;
+
+    return { powerCost, kwhCost, rateStatus };
   }
 
   _syncFromHass() {
-    const found = this._findPowerCostEntity();
-    if (!found) return;
+    const { powerCost, kwhCost, rateStatus } = this._findReferenceSensors();
+    const ref = powerCost || kwhCost;
+    if (ref) {
+      const attrs = ref.stateObj.attributes || {};
+      const next = {
+        bimonthly_energy:
+          attrs["bimonthly energy source"] || attrs.bimonthly_energy || "",
+        billing_mode: attrs.billing_mode || "residential",
+        meter_start_day:
+          String(attrs["start day"] || attrs.meter_start_day || ""),
+        manual_rates: attrs.manual_rates || null,
+      };
+      this._config = next;
+      this._editConfig = {
+        ...next,
+        manual_rates_text: next.manual_rates ? JSON.stringify(next.manual_rates, null, 2) : "",
+      };
+    }
 
-    const attrs = found.stateObj.attributes || {};
-    const next = {
-      bimonthly_energy: attrs["bimonthly energy source"] || "",
-      billing_mode: attrs.billing_mode || "residential",
-      meter_start_day: String(attrs["start day"] || ""),
-    };
-
-    this._config = next;
-    this._editConfig = { ...next };
+    if (rateStatus) {
+      const attrs = rateStatus.stateObj.attributes || {};
+      this._ratesInfo = {
+        rates_version: attrs.rates_version || "—",
+        rates_age_days: attrs.rates_age_days ?? "—",
+        manual_override: !!attrs.manual_override,
+      };
+    }
   }
 
   _getEnergySensorOptions() {
     const states = this._hass?.states || {};
     const result = [];
+    const seen = new Set();
+    const current = this._editConfig.bimonthly_energy || this._config.bimonthly_energy || "";
+
+    const pushOption = (entityId, label) => {
+      if (!entityId || seen.has(entityId)) return;
+      seen.add(entityId);
+      result.push({ entity_id: entityId, label: label || entityId });
+    };
+
+    if (current) pushOption(current, current);
 
     for (const [entityId, stateObj] of Object.entries(states)) {
       if (!entityId.startsWith("sensor.")) continue;
@@ -109,7 +139,9 @@ class TaiPowerConfigCard extends HTMLElement {
         attrs.friendly_name || "",
         attrs.device_class || "",
         unit,
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLowerCase();
 
       if (
         unit.toLowerCase() === "kwh" ||
@@ -120,10 +152,7 @@ class TaiPowerConfigCard extends HTMLElement {
         text.includes("電") ||
         text.includes("累計")
       ) {
-        result.push({
-          entity_id: entityId,
-          label: attrs.friendly_name ? `${attrs.friendly_name} (${entityId})` : entityId,
-        });
+        pushOption(entityId, attrs.friendly_name ? `${attrs.friendly_name} (${entityId})` : entityId);
       }
     }
 
@@ -131,7 +160,112 @@ class TaiPowerConfigCard extends HTMLElement {
     return result;
   }
 
-  _renderEntityField() {
+  _getModeMeta(mode) {
+    const map = {
+      residential: {
+        name: "住宅用",
+        thresholds: [240, 660, 1000, 1400, 2000, "∞"],
+        summer: [1.78, 2.55, 3.8, 5.14, 6.44, 8.86],
+        non_summer: [1.78, 2.26, 3.13, 4.24, 5.27, 7.03],
+      },
+      non_commercial: {
+        name: "非營業用",
+        thresholds: [240, 660, 1000, 1400, 2000, "∞"],
+        summer: [1.78, 2.55, 3.8, 5.14, 6.44, 8.86],
+        non_summer: [1.78, 2.26, 3.13, 4.24, 5.27, 7.03],
+      },
+      commercial: {
+        name: "營業用",
+        thresholds: [660, 1400, 3000, 6000, "∞"],
+        summer: [2.71, 3.76, 4.46, 7.08, 7.43],
+        non_summer: [2.28, 3.1, 3.61, 5.56, 5.83],
+      },
+    };
+    return map[mode] || map.residential;
+  }
+
+  _getEffectiveRates(mode) {
+    const meta = this._getModeMeta(mode);
+    const manual = this._editConfig.manual_rates || this._config.manual_rates || null;
+    if (manual && manual[mode] && Array.isArray(manual[mode].summer) && Array.isArray(manual[mode].non_summer)) {
+      return {
+        name: meta.name,
+        thresholds: meta.thresholds,
+        summer: manual[mode].summer,
+        non_summer: manual[mode].non_summer,
+        isManual: true,
+      };
+    }
+    return {
+      name: meta.name,
+      thresholds: meta.thresholds,
+      summer: meta.summer,
+      non_summer: meta.non_summer,
+      isManual: false,
+    };
+  }
+
+  _buildRateTable() {
+    const mode = this._editConfig.billing_mode || this._config.billing_mode || "residential";
+    const rateData = this._getEffectiveRates(mode);
+    const month = new Date().getMonth() + 1;
+    const isSummer = month >= 6 && month <= 9;
+    const currentRates = isSummer ? rateData.summer : rateData.non_summer;
+
+    const rows = rateData.summer
+      .map((summerRate, idx) => {
+        const nonSummerRate = rateData.non_summer[idx];
+        const upper = rateData.thresholds[idx];
+        const lower = idx === 0 ? 0 : rateData.thresholds[idx - 1];
+        const rangeLabel = idx === 0 ? `0 ~ ${upper}` : `${lower} ~ ${upper}`;
+        return `
+          <tr>
+            <td>${this._esc(rangeLabel)}</td>
+            <td class="${isSummer ? "active-season" : ""}">
+              <input class="rate-input" type="number" step="0.01" min="0" data-tier="${idx}" data-season="summer" value="${this._esc(summerRate)}" ${this._saving ? "disabled" : ""}>
+            </td>
+            <td class="${!isSummer ? "active-season" : ""}">
+              <input class="rate-input" type="number" step="0.01" min="0" data-tier="${idx}" data-season="non_summer" value="${this._esc(nonSummerRate)}" ${this._saving ? "disabled" : ""}>
+            </td>
+            <td class="current-rate"><strong>${this._esc(currentRates[idx])}</strong></td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    return `
+      <div class="section-title-row">
+        <div>
+          <div class="section-title">📊 費率表 — ${this._esc(rateData.name)}</div>
+          <div class="section-subtitle">目前季節：${isSummer ? "☀️ 夏月" : "❄️ 非夏月"}</div>
+        </div>
+        <div class="badge ${rateData.isManual ? "warn" : "ok"}">${rateData.isManual ? "手動覆蓋中" : "預設費率"}</div>
+      </div>
+
+      <table class="rate-table">
+        <thead>
+          <tr>
+            <th>級距 (kWh)</th>
+            <th>夏月費率</th>
+            <th>非夏月費率</th>
+            <th>當前</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="info-line">
+        費率版本：${this._esc(this._ratesInfo.rates_version)} ｜ 資料距今：${this._esc(this._ratesInfo.rates_age_days)} 天
+      </div>
+
+      <div class="actions rate-actions">
+        <button id="tp-apply-rates" class="primary" ${this._saving ? "disabled" : ""}>${this._saving ? "處理中..." : "💾 套用費率"}</button>
+        ${rateData.isManual ? `<button id="tp-reset-rates" class="secondary" ${this._saving ? "disabled" : ""}>↩️ 恢復預設</button>` : ""}
+      </div>
+    `;
+  }
+
+  _renderSettingsTab() {
     const options = this._getEnergySensorOptions();
     const current = this._editConfig.bimonthly_energy || "";
     const hasCurrent = current && options.some((item) => item.entity_id === current);
@@ -149,47 +283,65 @@ class TaiPowerConfigCard extends HTMLElement {
         </select>
         ${!hasCurrent && current ? `<div class="hint">目前設定：${this._esc(current)}</div>` : ""}
       </div>
+
+      <div class="field">
+        <label for="tp-billing-mode">計費模式</label>
+        <select id="tp-billing-mode">
+          <option value="residential" ${this._editConfig.billing_mode === "residential" ? "selected" : ""}>🏠 住宅用</option>
+          <option value="non_commercial" ${this._editConfig.billing_mode === "non_commercial" ? "selected" : ""}>🏢 非營業用</option>
+          <option value="commercial" ${this._editConfig.billing_mode === "commercial" ? "selected" : ""}>🏬 營業用</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="tp-meter-start-day">抄表起始日</label>
+        <input id="tp-meter-start-day" type="date" value="${this._esc(this._editConfig.meter_start_day || "")}" />
+      </div>
+
+      <div class="field">
+        <details>
+          <summary>▶ 進階：手動費率 JSON（備用）</summary>
+          <textarea id="tp-manual-rates" rows="5" placeholder='留空使用預設費率'>${this._esc(this._editConfig.manual_rates_text || "")}</textarea>
+        </details>
+      </div>
+
+      <div class="info-line">
+        費率版本：${this._esc(this._ratesInfo.rates_version)} ｜ 資料距今：${this._esc(this._ratesInfo.rates_age_days)} 天
+      </div>
+
+      <div class="actions">
+        <button id="tp-reset" class="secondary" ${this._saving ? "disabled" : ""}>重設</button>
+        <button id="tp-save" class="primary" ${this._saving ? "disabled" : ""}>${this._saving ? "儲存中..." : "💾 儲存設定"}</button>
+      </div>
     `;
   }
 
   _render() {
     if (!this.config) return;
 
-    const found = this._findPowerCostEntity();
-    const stateText = found
-      ? `目前來源：${this._esc(found.entityId)}`
+    const { powerCost } = this._findReferenceSensors();
+    const stateText = powerCost
+      ? `目前來源：${this._esc(powerCost.entityId)}`
       : "目前還抓不到台電 cost sensor，卡片仍可先顯示。";
 
     this.innerHTML = `
       <ha-card header="${this._esc(this.config.title)}">
         <div class="tp-wrap">
           <div class="tp-topbar">
-            <span class="badge">build v${this._esc(this._version)}</span>
+            <span class="badge build">build v${this._esc(this._version)}</span>
             <span class="muted">${stateText}</span>
           </div>
 
           ${this._error ? `<div class="alert error">${this._esc(this._error)}</div>` : ""}
           ${this._message ? `<div class="alert success">${this._esc(this._message)}</div>` : ""}
 
-          ${this._renderEntityField()}
-
-          <div class="field">
-            <label for="tp-billing-mode">計費模式</label>
-            <select id="tp-billing-mode">
-              <option value="residential" ${this._editConfig.billing_mode === "residential" ? "selected" : ""}>🏠 住宅用</option>
-              <option value="non_commercial" ${this._editConfig.billing_mode === "non_commercial" ? "selected" : ""}>🏢 非營業用</option>
-              <option value="commercial" ${this._editConfig.billing_mode === "commercial" ? "selected" : ""}>🏬 營業用</option>
-            </select>
+          <div class="tabs">
+            <button class="tab ${this._tab === "rates" ? "active" : ""}" data-tab="rates">📊 費率表</button>
+            <button class="tab ${this._tab === "settings" ? "active" : ""}" data-tab="settings">⚙️ 設定</button>
           </div>
 
-          <div class="field">
-            <label for="tp-meter-start-day">抄表起始日</label>
-            <input id="tp-meter-start-day" type="date" value="${this._esc(this._editConfig.meter_start_day || "")}" />
-          </div>
-
-          <div class="card-actions">
-            <button id="tp-reset" class="secondary" ${this._saving ? "disabled" : ""}>重設</button>
-            <button id="tp-save" class="primary" ${this._saving ? "disabled" : ""}>${this._saving ? "儲存中..." : "儲存設定"}</button>
+          <div class="tab-panel">
+            ${this._tab === "rates" ? this._buildRateTable() : this._renderSettingsTab()}
           </div>
         </div>
 
@@ -209,15 +361,47 @@ class TaiPowerConfigCard extends HTMLElement {
             align-items:center;
             padding:3px 8px;
             border-radius:999px;
+            font-size:.75rem;
+            font-weight:700;
+          }
+          .badge.build {
             background: rgba(33, 150, 243, .14);
             color: var(--primary-color);
-            font-size: .75rem;
-            font-weight: 700;
+          }
+          .badge.ok {
+            background: rgba(56, 142, 60, .12);
+            color: #2e7d32;
+          }
+          .badge.warn {
+            background: rgba(245, 124, 0, .12);
+            color: #ef6c00;
           }
           .muted {
             color: var(--secondary-text-color);
             font-size: .82rem;
           }
+          .tabs {
+            display:flex;
+            gap:0;
+            margin: 6px 0 14px;
+            border-bottom: 2px solid var(--divider-color, rgba(127,127,127,.2));
+          }
+          .tab {
+            flex:1;
+            border:none;
+            background:none;
+            padding:10px 8px;
+            cursor:pointer;
+            color: var(--secondary-text-color);
+            font-weight:700;
+            border-bottom:2px solid transparent;
+            margin-bottom:-2px;
+          }
+          .tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+          }
+          .tab-panel { min-height: 140px; }
           .field { margin-bottom: 12px; }
           .field label {
             display:block;
@@ -227,7 +411,8 @@ class TaiPowerConfigCard extends HTMLElement {
             color: var(--secondary-text-color);
           }
           .field input,
-          .field select {
+          .field select,
+          .field textarea {
             width:100%;
             box-sizing:border-box;
             padding: 10px 12px;
@@ -237,19 +422,29 @@ class TaiPowerConfigCard extends HTMLElement {
             color: var(--primary-text-color);
             font-size: 14px;
           }
+          .field textarea {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            resize: vertical;
+          }
           .hint {
             margin-top: 6px;
             color: var(--secondary-text-color);
             font-size: .78rem;
             word-break: break-all;
           }
-          .card-actions {
+          details summary {
+            cursor:pointer;
+            color: var(--secondary-text-color);
+            font-size: .9rem;
+          }
+          .actions {
             display:flex;
             justify-content:flex-end;
             gap:8px;
             margin-top: 14px;
+            flex-wrap: wrap;
           }
-          .card-actions button {
+          .actions button {
             border: none;
             border-radius: 8px;
             padding: 10px 14px;
@@ -257,17 +452,68 @@ class TaiPowerConfigCard extends HTMLElement {
             font-weight: 700;
             cursor: pointer;
           }
-          .card-actions button.primary {
+          .actions button.primary {
             background: var(--primary-color);
             color: white;
           }
-          .card-actions button.secondary {
+          .actions button.secondary {
             background: var(--secondary-background-color, rgba(127,127,127,.12));
             color: var(--primary-text-color);
           }
-          .card-actions button[disabled] {
+          .actions button[disabled] {
             opacity: .55;
             cursor: not-allowed;
+          }
+          .rate-table {
+            width:100%;
+            border-collapse: collapse;
+            font-size: .9rem;
+            margin-top: 8px;
+          }
+          .rate-table th,
+          .rate-table td {
+            padding: 8px;
+            border: 1px solid var(--divider-color, rgba(127,127,127,.2));
+            text-align: center;
+          }
+          .rate-table th {
+            background: var(--secondary-background-color, rgba(127,127,127,.08));
+          }
+          .rate-table td:first-child {
+            text-align:left;
+            white-space:nowrap;
+          }
+          .rate-input {
+            width: 84px;
+            padding: 6px 8px;
+            border: 1px solid var(--divider-color);
+            border-radius: 6px;
+            background: var(--card-background-color, var(--ha-card-background, #fff));
+            color: var(--primary-text-color);
+            text-align:center;
+          }
+          .active-season {
+            background: rgba(33, 150, 243, .08);
+          }
+          .current-rate {
+            background: rgba(76, 175, 80, .08);
+          }
+          .section-title-row {
+            display:flex;
+            justify-content:space-between;
+            gap:8px;
+            align-items:flex-start;
+            flex-wrap:wrap;
+            margin-bottom: 8px;
+          }
+          .section-title {
+            font-weight: 800;
+            font-size: 1rem;
+          }
+          .section-subtitle,
+          .info-line {
+            color: var(--secondary-text-color);
+            font-size: .84rem;
           }
           .alert {
             border-radius: 8px;
@@ -283,33 +529,52 @@ class TaiPowerConfigCard extends HTMLElement {
             background: rgba(56, 142, 60, .10);
             color: #2e7d32;
           }
+          @media (max-width: 640px) {
+            .rate-table { font-size: .82rem; }
+            .rate-input { width: 70px; }
+          }
         </style>
       </ha-card>
     `;
 
     this._bindEvents();
-    this._rendered = true;
   }
 
-  _bindEvents() {
-    const energy = this.querySelector("#tp-energy");
-    const billingMode = this.querySelector("#tp-billing-mode");
-    const meterStartDay = this.querySelector("#tp-meter-start-day");
-    const saveBtn = this.querySelector("#tp-save");
-    const resetBtn = this.querySelector("#tp-reset");
-
-    [energy, billingMode, meterStartDay].forEach((el) => {
+  _markEditingOn(elements) {
+    elements.forEach((el) => {
       if (!el) return;
       el.addEventListener("focus", () => {
         this._userEditing = true;
       });
       el.addEventListener("blur", () => {
         setTimeout(() => {
-          const active = this.contains(document.activeElement);
-          this._userEditing = !!active;
+          this._userEditing = !!this.contains(document.activeElement);
         }, 0);
       });
     });
+  }
+
+  _bindEvents() {
+    const energy = this.querySelector("#tp-energy");
+    const billingMode = this.querySelector("#tp-billing-mode");
+    const meterStartDay = this.querySelector("#tp-meter-start-day");
+    const manualRates = this.querySelector("#tp-manual-rates");
+    const saveBtn = this.querySelector("#tp-save");
+    const resetBtn = this.querySelector("#tp-reset");
+    const applyRatesBtn = this.querySelector("#tp-apply-rates");
+    const resetRatesBtn = this.querySelector("#tp-reset-rates");
+
+    this.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this._tab = btn.dataset.tab;
+        this._message = "";
+        this._error = "";
+        this._userEditing = false;
+        this._render();
+      });
+    });
+
+    this._markEditingOn([energy, billingMode, meterStartDay, manualRates, ...this.querySelectorAll(".rate-input")]);
 
     if (energy) {
       energy.addEventListener("change", (ev) => {
@@ -324,6 +589,7 @@ class TaiPowerConfigCard extends HTMLElement {
         this._editConfig.billing_mode = ev.target.value;
         this._message = "";
         this._error = "";
+        if (this._tab === "rates") this._render();
       });
     }
 
@@ -335,9 +601,20 @@ class TaiPowerConfigCard extends HTMLElement {
       });
     }
 
+    if (manualRates) {
+      manualRates.addEventListener("input", (ev) => {
+        this._editConfig.manual_rates_text = ev.target.value;
+        this._message = "";
+        this._error = "";
+      });
+    }
+
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
-        this._editConfig = { ...this._config };
+        this._editConfig = {
+          ...this._config,
+          manual_rates_text: this._config.manual_rates ? JSON.stringify(this._config.manual_rates, null, 2) : "",
+        };
         this._error = "";
         this._message = "已重設為目前設定";
         this._userEditing = false;
@@ -347,12 +624,24 @@ class TaiPowerConfigCard extends HTMLElement {
 
     if (saveBtn) {
       saveBtn.addEventListener("click", async () => {
-        await this._saveConfig();
+        await this._saveSettings();
+      });
+    }
+
+    if (applyRatesBtn) {
+      applyRatesBtn.addEventListener("click", async () => {
+        await this._applyRates();
+      });
+    }
+
+    if (resetRatesBtn) {
+      resetRatesBtn.addEventListener("click", async () => {
+        await this._resetRates();
       });
     }
   }
 
-  async _saveConfig() {
+  async _saveSettings() {
     if (!this._hass) return;
 
     if (!this._editConfig.bimonthly_energy) {
@@ -369,6 +658,19 @@ class TaiPowerConfigCard extends HTMLElement {
       return;
     }
 
+    let manualRates = null;
+    const raw = String(this._editConfig.manual_rates_text || "").trim();
+    if (raw) {
+      try {
+        manualRates = JSON.parse(raw);
+      } catch (err) {
+        this._error = `手動費率 JSON 格式錯誤：${err?.message || err}`;
+        this._message = "";
+        this._render();
+        return;
+      }
+    }
+
     this._saving = true;
     this._error = "";
     this._message = "";
@@ -379,15 +681,101 @@ class TaiPowerConfigCard extends HTMLElement {
         bimonthly_energy: this._editConfig.bimonthly_energy,
         billing_mode: this._editConfig.billing_mode,
         meter_start_day: this._editConfig.meter_start_day,
+        manual_rates: manualRates,
       });
 
-      this._config = { ...this._editConfig };
+      this._config = {
+        bimonthly_energy: this._editConfig.bimonthly_energy,
+        billing_mode: this._editConfig.billing_mode,
+        meter_start_day: this._editConfig.meter_start_day,
+        manual_rates: manualRates,
+      };
+      this._editConfig = {
+        ...this._config,
+        manual_rates_text: manualRates ? JSON.stringify(manualRates, null, 2) : "",
+      };
       this._message = "設定已送出，整合會自動重載。";
-      this._error = "";
     } catch (err) {
       console.error("[TaiPower Config] save failed:", err);
       this._error = `儲存失敗：${err?.message || err}`;
       this._message = "";
+    } finally {
+      this._saving = false;
+      this._userEditing = false;
+      this._render();
+    }
+  }
+
+  async _applyRates() {
+    if (!this._hass) return;
+
+    const mode = this._editConfig.billing_mode || "residential";
+    const currentManual = { ...(this._config.manual_rates || {}) };
+    const inputs = [...this.querySelectorAll(".rate-input")];
+    const summer = [];
+    const nonSummer = [];
+
+    for (const input of inputs) {
+      const val = parseFloat(input.value);
+      if (Number.isNaN(val)) {
+        this._error = "費率必須是數字";
+        this._message = "";
+        this._render();
+        return;
+      }
+      if (input.dataset.season === "summer") summer[Number(input.dataset.tier)] = val;
+      if (input.dataset.season === "non_summer") nonSummer[Number(input.dataset.tier)] = val;
+    }
+
+    currentManual[mode] = { summer, non_summer };
+
+    this._saving = true;
+    this._error = "";
+    this._message = "";
+    this._render();
+
+    try {
+      await this._hass.callService("taipower_bimonthly_cost", "update_config", {
+        manual_rates: currentManual,
+      });
+      this._config.manual_rates = currentManual;
+      this._editConfig.manual_rates = currentManual;
+      this._editConfig.manual_rates_text = JSON.stringify(currentManual, null, 2);
+      this._message = "費率已更新。";
+    } catch (err) {
+      console.error("[TaiPower Config] apply rates failed:", err);
+      this._error = `套用費率失敗：${err?.message || err}`;
+    } finally {
+      this._saving = false;
+      this._userEditing = false;
+      this._render();
+    }
+  }
+
+  async _resetRates() {
+    if (!this._hass) return;
+
+    const mode = this._editConfig.billing_mode || "residential";
+    const currentManual = { ...(this._config.manual_rates || {}) };
+    delete currentManual[mode];
+    const nextManual = Object.keys(currentManual).length ? currentManual : null;
+
+    this._saving = true;
+    this._error = "";
+    this._message = "";
+    this._render();
+
+    try {
+      await this._hass.callService("taipower_bimonthly_cost", "update_config", {
+        manual_rates: nextManual,
+      });
+      this._config.manual_rates = nextManual;
+      this._editConfig.manual_rates = nextManual;
+      this._editConfig.manual_rates_text = nextManual ? JSON.stringify(nextManual, null, 2) : "";
+      this._message = "已恢復預設費率。";
+    } catch (err) {
+      console.error("[TaiPower Config] reset rates failed:", err);
+      this._error = `恢復預設失敗：${err?.message || err}`;
     } finally {
       this._saving = false;
       this._userEditing = false;
@@ -405,7 +793,7 @@ if (!window.customCards.some((card) => card.type === "custom:taipower-config-car
   window.customCards.push({
     type: "custom:taipower-config-card",
     name: "台電費率設定卡片",
-    description: "設定台電雙月電費整合的感測器、計費模式與抄表日",
+    description: "雙頁籤台電設定卡片：費率表 + 設定",
     preview: true,
     documentationURL: "https://github.com/ivanlee1007/Taipower-Bimonthly-Energy-Cost-homeassistant",
   });
