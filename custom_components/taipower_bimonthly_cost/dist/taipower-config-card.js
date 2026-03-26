@@ -28,7 +28,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.20";
+    this._version = "1.5.21";
   }
 
   setConfig(config) {
@@ -849,7 +849,7 @@ class TaiPowerConfigCard extends HTMLElement {
       if (input.dataset.season === "non_summer") nonSummer[Number(input.dataset.tier)] = val;
     }
 
-    currentManual[mode] = { summer, non_summer };
+    currentManual[mode] = { summer, non_summer: nonSummer };
 
     // 先把本地 state 更新成使用者剛輸入的值，避免 render 立刻把畫面洗回舊值
     this._config = {
