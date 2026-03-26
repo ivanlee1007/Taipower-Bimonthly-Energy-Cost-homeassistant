@@ -26,7 +26,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.16";
+    this._version = "1.5.17";
   }
 
   setConfig(config) {
@@ -792,18 +792,26 @@ class TaiPowerConfigCard extends HTMLElement {
 
     currentManual[mode] = { summer, non_summer };
 
+    // 先把本地 state 更新成使用者剛輸入的值，避免 render 立刻把畫面洗回舊值
+    this._config = {
+      ...this._config,
+      manual_rates: currentManual,
+    };
+    this._editConfig = {
+      ...this._editConfig,
+      manual_rates: currentManual,
+      manual_rates_text: JSON.stringify(currentManual, null, 2),
+    };
+
     this._saving = true;
     this._error = "";
-    this._message = "";
+    this._message = "費率送出中…";
     this._render();
 
     try {
       await this._hass.callService("taipower_bimonthly_cost", "update_config", {
         manual_rates: currentManual,
       });
-      this._config.manual_rates = currentManual;
-      this._editConfig.manual_rates = currentManual;
-      this._editConfig.manual_rates_text = JSON.stringify(currentManual, null, 2);
       this._message = "費率已送出，等待整合同步。";
       this._dirty = true;
       this._pendingSync = true;
