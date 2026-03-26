@@ -256,6 +256,7 @@ class EnergyCostSensor(KwhCostSensor):
             ATTR_USED_DAYS: (now - self._reset_day).days % 60,
             ATTR_BILLING_MODE: self._billing_mode,
             ATTR_PDF_VERSION: mode_info.get("pdf_version", "unknown"),
+            CONF_MANUAL_RATES: self._entry_data.get(CONF_MANUAL_RATES),
         }
 
     async def async_added_to_hass(self):
