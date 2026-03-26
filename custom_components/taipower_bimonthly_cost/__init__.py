@@ -47,6 +47,42 @@ def _get_card_js_url() -> str:
     return f"{_CARD_STATIC_URL}?v={version}"
 
 
+def _get_resources_path(hass: HomeAssistant) -> Path:
+    """Return Lovelace resources storage path."""
+    return Path(hass.config.config_dir) / ".storage" / "lovelace_resources"
+
+
+def _register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Persist card resource in lovelace_resources."""
+    res_path = _get_resources_path(hass)
+    url = _get_card_js_url()
+
+    try:
+        with open(res_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {"data": {"resources": [], "items": []}, "key": "lovelace_resources"}
+
+    resources = data.setdefault("data", {}).setdefault("resources", [])
+    items = data.setdefault("data", {}).setdefault("items", [])
+
+    matched = False
+    for arr in (resources, items):
+        for item in arr:
+            if "taipower" in item.get("url", ""):
+                item["url"] = url
+                item["type"] = "module"
+                matched = True
+
+    if not matched:
+        resources.append({"url": url, "type": "module"})
+        items.append({"url": url, "type": "module"})
+
+    with open(res_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the TaiPower component."""
     domain_data = hass.data.setdefault(DOMAIN, {})
@@ -125,6 +161,12 @@ async def async_setup(hass: HomeAssistant, config: dict):
         except ValueError:
             domain_data["card_resource_registered"] = True
             _LOGGER.debug("TaiPower card JS URL already registered: %s", _get_card_js_url())
+
+        try:
+            await hass.async_add_executor_job(_register_lovelace_resource, hass)
+            _LOGGER.info("TaiPower card Lovelace resource persisted: %s", _get_card_js_url())
+        except OSError as err:
+            _LOGGER.warning("Failed to persist Lovelace resource: %s", err)
 
     return True
 
