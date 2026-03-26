@@ -349,9 +349,10 @@ class RateStatusSensor(SensorEntity):
 
     async def async_added_to_hass(self):
         """Validate rates on startup."""
-        self._status, self._details = await self._hass.async_add_executor_job(
+        self._status, details = await self._hass.async_add_executor_job(
             validate_rates
         )
+        self._details = {"_entry_data": self._entry_data, **(details or {})}
         if self._status != "up_to_date":
             _LOGGER.warning(
                 "TaiPower rates validation: %s – %s",
