@@ -23,7 +23,7 @@ class TaiPowerConfigCard extends HTMLElement {
       meter_start_day: "",
     };
     this._editConfig = { ...this._config };
-    this._version = "1.5.5";
+    this._version = "1.5.6";
   }
 
   setConfig(config) {
