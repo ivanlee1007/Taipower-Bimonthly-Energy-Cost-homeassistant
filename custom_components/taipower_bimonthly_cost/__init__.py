@@ -1,5 +1,7 @@
 """The TaiPower Energy Cost integration."""
 import asyncio
+import copy
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -52,31 +54,63 @@ def _get_resources_path(hass: HomeAssistant) -> Path:
     return Path(hass.config.config_dir) / ".storage" / "lovelace_resources"
 
 
+def _resource_entry(url: str, existing: dict | None = None) -> dict:
+    """Build a normalized Lovelace resource entry."""
+    entry = {
+        "url": url,
+        "type": "module",
+        "id": (existing or {}).get("id") or hashlib.md5(url.encode("utf-8")).hexdigest(),
+    }
+    return entry
+
+
 def _register_lovelace_resource(hass: HomeAssistant) -> None:
-    """Persist card resource in lovelace_resources."""
+    """Persist card resource in lovelace_resources without touching other resources."""
     res_path = _get_resources_path(hass)
     url = _get_card_js_url()
 
     try:
         with open(res_path, encoding="utf-8") as f:
             data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {"data": {"resources": [], "items": []}, "key": "lovelace_resources"}
+    except FileNotFoundError:
+        data = {
+            "version": 1,
+            "minor_version": 1,
+            "key": "lovelace_resources",
+            "data": {"resources": [], "items": []},
+        }
+    except json.JSONDecodeError as err:
+        _LOGGER.error("Refusing to overwrite invalid lovelace_resources JSON: %s", err)
+        return
 
-    resources = data.setdefault("data", {}).setdefault("resources", [])
-    items = data.setdefault("data", {}).setdefault("items", [])
+    data_block = data.setdefault("data", {})
+    items = data_block.get("items") if isinstance(data_block.get("items"), list) else []
+    resources = data_block.get("resources") if isinstance(data_block.get("resources"), list) else []
 
-    matched = False
-    for arr in (resources, items):
-        for item in arr:
-            if "taipower" in item.get("url", ""):
-                item["url"] = url
-                item["type"] = "module"
-                matched = True
+    merged: list[dict] = []
+    seen_urls: set[str] = set()
 
-    if not matched:
-        resources.append({"url": url, "type": "module"})
-        items.append({"url": url, "type": "module"})
+    for source in (items, resources):
+        for item in source:
+            if not isinstance(item, dict):
+                continue
+            item_url = item.get("url")
+            if not item_url or item_url in seen_urls:
+                continue
+            merged.append(_resource_entry(item_url, item))
+            seen_urls.add(item_url)
+
+    target_index = next(
+        (i for i, item in enumerate(merged) if _CARD_SRC_NAME in item.get("url", "") or "/taipower_" in item.get("url", "")),
+        None,
+    )
+    if target_index is None:
+        merged.append(_resource_entry(url))
+    else:
+        merged[target_index] = _resource_entry(url, merged[target_index])
+
+    data_block["items"] = copy.deepcopy(merged)
+    data_block["resources"] = copy.deepcopy(merged)
 
     with open(res_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
