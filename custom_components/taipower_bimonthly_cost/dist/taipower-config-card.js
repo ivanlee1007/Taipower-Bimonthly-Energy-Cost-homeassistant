@@ -26,7 +26,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.11";
+    this._version = "1.5.12";
   }
 
   setConfig(config) {

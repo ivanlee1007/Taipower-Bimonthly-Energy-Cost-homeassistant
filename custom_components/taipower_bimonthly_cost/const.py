@@ -98,7 +98,7 @@ def get_effective_tiers(entry_data_or_options: dict, mode: str) -> list[dict]:
 
     entry_data_or_options should be entry.options (preferred) or entry.data.
     """
-    manual = entry_data_or_options.get(CONF_MANUAL_RATES, {})
+    manual = entry_data_or_options.get(CONF_MANUAL_RATES) or {}
     if mode in manual:
         summer = manual[mode].get("summer", [])
         non_summer = manual[mode].get("non_summer", [])

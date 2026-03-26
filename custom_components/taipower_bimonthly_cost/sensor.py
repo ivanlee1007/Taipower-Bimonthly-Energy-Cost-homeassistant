@@ -325,7 +325,7 @@ class RateStatusSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         # Check if manual rates override is active for current billing mode
-        manual = self._details.get("_entry_data", {}).get(CONF_MANUAL_RATES, {})
+        manual = self._details.get("_entry_data", {}).get(CONF_MANUAL_RATES) or {}
         manual_override = self._billing_mode in manual and bool(manual[self._billing_mode])
 
         attrs = {
