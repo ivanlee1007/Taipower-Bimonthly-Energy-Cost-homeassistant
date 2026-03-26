@@ -26,7 +26,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.15";
+    this._version = "1.5.16";
   }
 
   setConfig(config) {
@@ -109,9 +109,9 @@ class TaiPowerConfigCard extends HTMLElement {
   _buildBackendSnapshot() {
     const { powerCost, kwhCost, rateStatus } = this._findReferenceSensors();
     const config =
+      this._extractConfigFromRef(rateStatus) ||
       this._extractConfigFromRef(powerCost) ||
-      this._extractConfigFromRef(kwhCost) ||
-      this._extractConfigFromRef(rateStatus);
+      this._extractConfigFromRef(kwhCost);
 
     const rates = rateStatus
       ? {
