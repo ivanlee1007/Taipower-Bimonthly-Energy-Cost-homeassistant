@@ -26,7 +26,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.14";
+    this._version = "1.5.15";
   }
 
   setConfig(config) {
@@ -90,18 +90,28 @@ class TaiPowerConfigCard extends HTMLElement {
     return { powerCost, kwhCost, rateStatus };
   }
 
+  _extractConfigFromRef(ref) {
+    if (!ref?.stateObj) return null;
+    const attrs = ref.stateObj.attributes || {};
+    const source = attrs["bimonthly energy source"] || attrs.bimonthly_energy || "";
+    const billingMode = attrs.billing_mode || "";
+    const meterStartDay = attrs["start day"] || attrs.meter_start_day || "";
+    const hasConfig = !!(source || billingMode || meterStartDay || Object.prototype.hasOwnProperty.call(attrs, "manual_rates"));
+    if (!hasConfig) return null;
+    return {
+      bimonthly_energy: source,
+      billing_mode: billingMode || "residential",
+      meter_start_day: String(meterStartDay || ""),
+      manual_rates: Object.prototype.hasOwnProperty.call(attrs, "manual_rates") ? attrs.manual_rates : null,
+    };
+  }
+
   _buildBackendSnapshot() {
     const { powerCost, kwhCost, rateStatus } = this._findReferenceSensors();
-    const ref = powerCost || kwhCost || rateStatus;
-    const config = ref
-      ? {
-          bimonthly_energy:
-            ref.stateObj.attributes?.["bimonthly energy source"] || ref.stateObj.attributes?.bimonthly_energy || "",
-          billing_mode: ref.stateObj.attributes?.billing_mode || "residential",
-          meter_start_day: String(ref.stateObj.attributes?.["start day"] || ref.stateObj.attributes?.meter_start_day || ""),
-          manual_rates: ref.stateObj.attributes?.manual_rates || null,
-        }
-      : null;
+    const config =
+      this._extractConfigFromRef(powerCost) ||
+      this._extractConfigFromRef(kwhCost) ||
+      this._extractConfigFromRef(rateStatus);
 
     const rates = rateStatus
       ? {
