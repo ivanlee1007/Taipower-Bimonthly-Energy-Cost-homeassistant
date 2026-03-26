@@ -13,6 +13,7 @@ class TaiPowerConfigCard extends HTMLElement {
     this._userEditing = false;
     this._dirty = false;
     this._pendingSync = false;
+    this._activeAction = "";
     this._tab = "rates";
     this._config = {
       bimonthly_energy: "",
@@ -26,7 +27,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.17";
+    this._version = "1.5.18";
   }
 
   setConfig(config) {
@@ -48,8 +49,17 @@ class TaiPowerConfigCard extends HTMLElement {
 
     if (this._pendingSync) {
       if (this._backendMatchesLocalConfig()) {
+        const action = this._activeAction;
         this._pendingSync = false;
+        this._activeAction = "";
         this._dirty = false;
+        this._message = action === "apply_rates"
+          ? "費率已同步完成。"
+          : action === "reset_rates"
+            ? "已恢復預設費率並同步完成。"
+            : action === "save_settings"
+              ? "設定已同步完成。"
+              : "同步完成。";
         this._syncFromHass();
         this._render();
       }
@@ -306,8 +316,8 @@ class TaiPowerConfigCard extends HTMLElement {
       </div>
 
       <div class="actions rate-actions">
-        <button id="tp-apply-rates" class="primary" ${this._saving ? "disabled" : ""}>${this._saving ? "處理中..." : "💾 套用費率"}</button>
-        ${rateData.isManual ? `<button id="tp-reset-rates" class="secondary" ${this._saving ? "disabled" : ""}>↩️ 恢復預設</button>` : ""}
+        <button id="tp-apply-rates" class="primary" ${(this._saving || (this._pendingSync && this._activeAction === "apply_rates")) ? "disabled" : ""}>${this._saving && this._activeAction === "apply_rates" ? "送出中..." : this._pendingSync && this._activeAction === "apply_rates" ? "等待同步..." : "💾 套用費率"}</button>
+        ${rateData.isManual ? `<button id="tp-reset-rates" class="secondary" ${(this._saving || (this._pendingSync && this._activeAction === "reset_rates")) ? "disabled" : ""}>${this._saving && this._activeAction === "reset_rates" ? "送出中..." : this._pendingSync && this._activeAction === "reset_rates" ? "等待同步..." : "↩️ 恢復預設"}</button>` : ""}
       </div>
     `;
   }
@@ -358,7 +368,7 @@ class TaiPowerConfigCard extends HTMLElement {
 
       <div class="actions">
         <button id="tp-reset" class="secondary" ${this._saving ? "disabled" : ""}>重設</button>
-        <button id="tp-save" class="primary" ${this._saving ? "disabled" : ""}>${this._saving ? "儲存中..." : "💾 儲存設定"}</button>
+        <button id="tp-save" class="primary" ${(this._saving || (this._pendingSync && this._activeAction === "save_settings")) ? "disabled" : ""}>${this._saving && this._activeAction === "save_settings" ? "送出中..." : this._pendingSync && this._activeAction === "save_settings" ? "等待同步..." : "💾 儲存設定"}</button>
       </div>
     `;
   }
@@ -366,17 +376,29 @@ class TaiPowerConfigCard extends HTMLElement {
   _render() {
     if (!this.config) return;
 
-    const { powerCost } = this._findReferenceSensors();
-    const stateText = powerCost
-      ? `目前來源：${this._esc(powerCost.entityId)}`
-      : "目前還抓不到台電 cost sensor，卡片仍可先顯示。";
+    const { powerCost, rateStatus } = this._findReferenceSensors();
+    const stateText = rateStatus
+      ? `目前來源：${this._esc(rateStatus.entityId)}`
+      : powerCost
+        ? `目前來源：${this._esc(powerCost.entityId)}`
+        : "目前還抓不到台電 cost sensor，卡片仍可先顯示。";
+    const statusBadge = this._error
+      ? '<span class="badge warn">錯誤</span>'
+      : this._saving
+        ? '<span class="badge warn">送出中</span>'
+        : this._pendingSync
+          ? '<span class="badge warn">等待同步</span>'
+          : '<span class="badge ok">就緒</span>';
 
     this.innerHTML = `
       <ha-card header="${this._esc(this.config.title)}">
         <div class="tp-wrap">
           <div class="tp-topbar">
             <span class="badge build">build v${this._esc(this._version)}</span>
-            <span class="muted">${stateText}</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              ${statusBadge}
+              <span class="muted">${stateText}</span>
+            </div>
           </div>
 
           ${this._error ? `<div class="alert error">${this._esc(this._error)}</div>` : ""}
@@ -733,8 +755,9 @@ class TaiPowerConfigCard extends HTMLElement {
     }
 
     this._saving = true;
+    this._activeAction = "save_settings";
     this._error = "";
-    this._message = "";
+    this._message = "設定送出中…";
     this._render();
 
     try {
@@ -760,6 +783,7 @@ class TaiPowerConfigCard extends HTMLElement {
       this._pendingSync = true;
     } catch (err) {
       console.error("[TaiPower Config] save failed:", err);
+      this._activeAction = "";
       this._error = `儲存失敗：${err?.message || err}`;
       this._message = "";
     } finally {
@@ -804,6 +828,7 @@ class TaiPowerConfigCard extends HTMLElement {
     };
 
     this._saving = true;
+    this._activeAction = "apply_rates";
     this._error = "";
     this._message = "費率送出中…";
     this._render();
@@ -817,6 +842,7 @@ class TaiPowerConfigCard extends HTMLElement {
       this._pendingSync = true;
     } catch (err) {
       console.error("[TaiPower Config] apply rates failed:", err);
+      this._activeAction = "";
       this._error = `套用費率失敗：${err?.message || err}`;
     } finally {
       this._saving = false;
@@ -834,8 +860,9 @@ class TaiPowerConfigCard extends HTMLElement {
     const nextManual = Object.keys(currentManual).length ? currentManual : null;
 
     this._saving = true;
+    this._activeAction = "reset_rates";
     this._error = "";
-    this._message = "";
+    this._message = "恢復預設送出中…";
     this._render();
 
     try {
@@ -850,6 +877,7 @@ class TaiPowerConfigCard extends HTMLElement {
       this._pendingSync = true;
     } catch (err) {
       console.error("[TaiPower Config] reset rates failed:", err);
+      this._activeAction = "";
       this._error = `恢復預設失敗：${err?.message || err}`;
     } finally {
       this._saving = false;
