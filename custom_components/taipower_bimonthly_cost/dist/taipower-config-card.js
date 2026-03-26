@@ -11,6 +11,7 @@ class TaiPowerConfigCard extends HTMLElement {
     this._error = "";
     this._message = "";
     this._userEditing = false;
+    this._dirty = false;
     this._tab = "rates";
     this._config = {
       bimonthly_energy: "",
@@ -24,7 +25,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.8";
+    this._version = "1.5.9";
   }
 
   setConfig(config) {
@@ -44,7 +45,7 @@ class TaiPowerConfigCard extends HTMLElement {
       return;
     }
 
-    if (!this._userEditing) {
+    if (!this._userEditing && !this._dirty) {
       this._syncFromHass();
       this._render();
     }
@@ -579,6 +580,7 @@ class TaiPowerConfigCard extends HTMLElement {
     if (energy) {
       energy.addEventListener("change", (ev) => {
         this._editConfig.bimonthly_energy = ev.target.value;
+        this._dirty = true;
         this._message = "";
         this._error = "";
       });
@@ -587,6 +589,7 @@ class TaiPowerConfigCard extends HTMLElement {
     if (billingMode) {
       billingMode.addEventListener("change", (ev) => {
         this._editConfig.billing_mode = ev.target.value;
+        this._dirty = true;
         this._message = "";
         this._error = "";
         if (this._tab === "rates") this._render();
@@ -596,6 +599,7 @@ class TaiPowerConfigCard extends HTMLElement {
     if (meterStartDay) {
       meterStartDay.addEventListener("input", (ev) => {
         this._editConfig.meter_start_day = ev.target.value;
+        this._dirty = true;
         this._message = "";
         this._error = "";
       });
@@ -604,10 +608,19 @@ class TaiPowerConfigCard extends HTMLElement {
     if (manualRates) {
       manualRates.addEventListener("input", (ev) => {
         this._editConfig.manual_rates_text = ev.target.value;
+        this._dirty = true;
         this._message = "";
         this._error = "";
       });
     }
+
+    this.querySelectorAll(".rate-input").forEach((input) => {
+      input.addEventListener("input", () => {
+        this._dirty = true;
+        this._message = "";
+        this._error = "";
+      });
+    });
 
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
@@ -618,6 +631,7 @@ class TaiPowerConfigCard extends HTMLElement {
         this._error = "";
         this._message = "已重設為目前設定";
         this._userEditing = false;
+        this._dirty = false;
         this._render();
       });
     }
@@ -695,6 +709,7 @@ class TaiPowerConfigCard extends HTMLElement {
         manual_rates_text: manualRates ? JSON.stringify(manualRates, null, 2) : "",
       };
       this._message = "設定已送出，整合會自動重載。";
+      this._dirty = false;
     } catch (err) {
       console.error("[TaiPower Config] save failed:", err);
       this._error = `儲存失敗：${err?.message || err}`;
@@ -742,6 +757,7 @@ class TaiPowerConfigCard extends HTMLElement {
       this._editConfig.manual_rates = currentManual;
       this._editConfig.manual_rates_text = JSON.stringify(currentManual, null, 2);
       this._message = "費率已更新。";
+      this._dirty = false;
     } catch (err) {
       console.error("[TaiPower Config] apply rates failed:", err);
       this._error = `套用費率失敗：${err?.message || err}`;
@@ -773,6 +789,7 @@ class TaiPowerConfigCard extends HTMLElement {
       this._editConfig.manual_rates = nextManual;
       this._editConfig.manual_rates_text = nextManual ? JSON.stringify(nextManual, null, 2) : "";
       this._message = "已恢復預設費率。";
+      this._dirty = false;
     } catch (err) {
       console.error("[TaiPower Config] reset rates failed:", err);
       this._error = `恢復預設失敗：${err?.message || err}`;
