@@ -14,6 +14,7 @@ class TaiPowerConfigCard extends HTMLElement {
     this._dirty = false;
     this._pendingSync = false;
     this._activeAction = "";
+    this._delegatedClickBound = false;
     this._tab = "rates";
     this._config = {
       bimonthly_energy: "",
@@ -27,7 +28,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.18";
+    this._version = "1.5.19";
   }
 
   setConfig(config) {
@@ -36,6 +37,62 @@ class TaiPowerConfigCard extends HTMLElement {
       ...config,
     };
     this._render();
+  }
+
+  connectedCallback() {
+    if (this._delegatedClickBound) return;
+    this._delegatedClickBound = true;
+    this.addEventListener("click", async (ev) => {
+      const target = ev.target instanceof Element ? ev.target : null;
+      if (!target) return;
+
+      const tabBtn = target.closest(".tab");
+      if (tabBtn && this.contains(tabBtn)) {
+        this._tab = tabBtn.dataset.tab;
+        this._message = "";
+        this._error = "";
+        this._userEditing = false;
+        this._render();
+        return;
+      }
+
+      const saveBtn = target.closest("#tp-save");
+      if (saveBtn && this.contains(saveBtn)) {
+        ev.preventDefault();
+        await this._saveSettings();
+        return;
+      }
+
+      const applyBtn = target.closest("#tp-apply-rates");
+      if (applyBtn && this.contains(applyBtn)) {
+        ev.preventDefault();
+        await this._applyRates();
+        return;
+      }
+
+      const resetRatesBtn = target.closest("#tp-reset-rates");
+      if (resetRatesBtn && this.contains(resetRatesBtn)) {
+        ev.preventDefault();
+        await this._resetRates();
+        return;
+      }
+
+      const resetBtn = target.closest("#tp-reset");
+      if (resetBtn && this.contains(resetBtn)) {
+        ev.preventDefault();
+        this._editConfig = {
+          ...this._config,
+          manual_rates_text: this._config.manual_rates ? JSON.stringify(this._config.manual_rates, null, 2) : "",
+        };
+        this._error = "";
+        this._message = "已重設為目前設定";
+        this._userEditing = false;
+        this._dirty = false;
+        this._pendingSync = false;
+        this._activeAction = "";
+        this._render();
+      }
+    });
   }
 
   set hass(hass) {
@@ -628,20 +685,6 @@ class TaiPowerConfigCard extends HTMLElement {
     const billingMode = this.querySelector("#tp-billing-mode");
     const meterStartDay = this.querySelector("#tp-meter-start-day");
     const manualRates = this.querySelector("#tp-manual-rates");
-    const saveBtn = this.querySelector("#tp-save");
-    const resetBtn = this.querySelector("#tp-reset");
-    const applyRatesBtn = this.querySelector("#tp-apply-rates");
-    const resetRatesBtn = this.querySelector("#tp-reset-rates");
-
-    this.querySelectorAll(".tab").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this._tab = btn.dataset.tab;
-        this._message = "";
-        this._error = "";
-        this._userEditing = false;
-        this._render();
-      });
-    });
 
     this._markEditingOn([energy, billingMode, meterStartDay, manualRates, ...this.querySelectorAll(".rate-input")]);
 
@@ -690,38 +733,6 @@ class TaiPowerConfigCard extends HTMLElement {
       });
     });
 
-    if (resetBtn) {
-      resetBtn.addEventListener("click", () => {
-        this._editConfig = {
-          ...this._config,
-          manual_rates_text: this._config.manual_rates ? JSON.stringify(this._config.manual_rates, null, 2) : "",
-        };
-        this._error = "";
-        this._message = "已重設為目前設定";
-        this._userEditing = false;
-        this._dirty = false;
-        this._pendingSync = false;
-        this._render();
-      });
-    }
-
-    if (saveBtn) {
-      saveBtn.addEventListener("click", async () => {
-        await this._saveSettings();
-      });
-    }
-
-    if (applyRatesBtn) {
-      applyRatesBtn.addEventListener("click", async () => {
-        await this._applyRates();
-      });
-    }
-
-    if (resetRatesBtn) {
-      resetRatesBtn.addEventListener("click", async () => {
-        await this._resetRates();
-      });
-    }
   }
 
   async _saveSettings() {
