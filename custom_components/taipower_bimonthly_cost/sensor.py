@@ -2,13 +2,14 @@
 import logging
 from datetime import datetime
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import (
     ATTR_BIMONTHLY_ENERGY,
@@ -104,18 +105,17 @@ async def async_setup_entry(
                 )
                 registry.async_remove(entity_entry.entity_id)
 
+        merged = {**entry.data, **entry.options}
         for description in COST_SENSORS:
             if description.key == "kwh_cost":
                 entities.extend(
-                    [KwhCostSensor(hass, entry.options, description, entry.entry_id)]
+                    [KwhCostSensor(hass, merged, description, entry.entry_id)]
                 )
             if description.key == "power_cost":
                 entities.extend(
-                    [EnergyCostSensor(hass, entry.options, description, entry.entry_id)]
+                    [EnergyCostSensor(hass, merged, description, entry.entry_id)]
                 )
             if description.key == "rate_status":
-                # Merge data + options so RateStatusSensor can see manual_rates
-                merged = {**entry.data, **entry.options}
                 entities.extend(
                     [RateStatusSensor(hass, merged, description, entry.entry_id)]
                 )
@@ -145,6 +145,37 @@ class CostSensor(SensorEntity):
         self._billing_mode = entry_data.get(CONF_BILLING_MODE, DEFAULT_BILLING_MODE)
         self._entry_data = entry_data  # keep for manual rates lookup
         self._entry_id = entry_id
+        self._unsub_source = None
+        self._startup_refresh_unsubs = []
+
+    async def async_added_to_hass(self):
+        """Subscribe to source entity changes so restored sensors recover automatically."""
+        await super().async_added_to_hass()
+
+        if self._energy_entity:
+            @callback
+            def _handle_source_change(event):
+                self.async_write_ha_state()
+
+            self._unsub_source = async_track_state_change_event(
+                self._hass,
+                [self._energy_entity],
+                _handle_source_change,
+            )
+            self.async_on_remove(self._unsub_source)
+
+        # Immediate refresh plus a few delayed retries to survive HA startup
+        # race conditions (source sensor may come back after this entity).
+        self.async_write_ha_state()
+
+        @callback
+        def _delayed_refresh(_now):
+            self.async_write_ha_state()
+
+        for delay in (5, 15, 30):
+            unsub = async_call_later(self._hass, delay, _delayed_refresh)
+            self._startup_refresh_unsubs.append(unsub)
+            self.async_on_remove(unsub)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -261,11 +292,12 @@ class EnergyCostSensor(KwhCostSensor):
 
     async def async_added_to_hass(self):
         """ added to hass """
-        # convert to datetime format
+        # convert to datetime format before base class triggers first recompute
         try:
             self._reset_day = datetime.strptime(self._reset_day, "%Y-%m-%d")
         except Exception:
             self._reset_day = datetime.strptime(self._reset_day, "%Y/%m/%d")
+        await super().async_added_to_hass()
 
 
 class RateStatusSensor(SensorEntity):
