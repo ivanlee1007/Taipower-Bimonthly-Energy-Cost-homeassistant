@@ -28,7 +28,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.23";
+    this._version = "1.5.24";
   }
 
   setConfig(config) {
@@ -87,9 +87,6 @@ class TaiPowerConfigCard extends HTMLElement {
       const applyBtn = this._pathFindById(path, "tp-apply-rates");
       if (applyBtn && this.contains(applyBtn)) {
         ev.preventDefault();
-        this._message = "已偵測到套用費率按下";
-        this._error = "";
-        this._render();
         await this._applyRates();
         return;
       }
