@@ -28,7 +28,7 @@ class TaiPowerConfigCard extends HTMLElement {
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.22";
+    this._version = "1.5.23";
   }
 
   setConfig(config) {
@@ -193,7 +193,7 @@ class TaiPowerConfigCard extends HTMLElement {
       bimonthly_energy: source,
       billing_mode: billingMode || "residential",
       meter_start_day: String(meterStartDay || ""),
-      manual_rates: Object.prototype.hasOwnProperty.call(attrs, "manual_rates") ? attrs.manual_rates : null,
+      manual_rates: Object.prototype.hasOwnProperty.call(attrs, "manual_rates") ? this._normalizeManualRates(attrs.manual_rates) : null,
     };
   }
 
@@ -215,6 +215,24 @@ class TaiPowerConfigCard extends HTMLElement {
     return { config, rates };
   }
 
+  _normalizeManualRates(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+    const normalized = {};
+    for (const [mode, rates] of Object.entries(value)) {
+      if (!rates || typeof rates !== "object") continue;
+      const summer = Array.isArray(rates.summer) ? rates.summer : null;
+      const nonSummer = Array.isArray(rates.non_summer) ? rates.non_summer : null;
+      if (!summer && !nonSummer) continue;
+      normalized[mode] = {
+        ...(summer ? { summer } : {}),
+        ...(nonSummer ? { non_summer: nonSummer } : {}),
+      };
+    }
+
+    return Object.keys(normalized).length ? normalized : null;
+  }
+
   _jsonEqual(a, b) {
     return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   }
@@ -226,14 +244,17 @@ class TaiPowerConfigCard extends HTMLElement {
       snap.config.bimonthly_energy === (this._config.bimonthly_energy || "") &&
       snap.config.billing_mode === (this._config.billing_mode || "residential") &&
       snap.config.meter_start_day === String(this._config.meter_start_day || "") &&
-      this._jsonEqual(snap.config.manual_rates, this._config.manual_rates || null)
+      this._jsonEqual(snap.config.manual_rates, this._normalizeManualRates(this._config.manual_rates))
     );
   }
 
   _syncFromHass() {
     const snap = this._buildBackendSnapshot();
     if (snap.config) {
-      const next = snap.config;
+      const next = {
+        ...snap.config,
+        manual_rates: this._normalizeManualRates(snap.config.manual_rates),
+      };
       this._config = next;
       this._editConfig = {
         ...next,
@@ -807,7 +828,7 @@ class TaiPowerConfigCard extends HTMLElement {
         bimonthly_energy: this._editConfig.bimonthly_energy,
         billing_mode: this._editConfig.billing_mode,
         meter_start_day: this._editConfig.meter_start_day,
-        manual_rates: manualRates,
+        manual_rates: this._normalizeManualRates(manualRates),
       };
       this._editConfig = {
         ...this._config,
@@ -850,16 +871,17 @@ class TaiPowerConfigCard extends HTMLElement {
     }
 
     currentManual[mode] = { summer, non_summer: nonSummer };
+    const normalizedManual = this._normalizeManualRates(currentManual);
 
     // 先把本地 state 更新成使用者剛輸入的值，避免 render 立刻把畫面洗回舊值
     this._config = {
       ...this._config,
-      manual_rates: currentManual,
+      manual_rates: normalizedManual,
     };
     this._editConfig = {
       ...this._editConfig,
-      manual_rates: currentManual,
-      manual_rates_text: JSON.stringify(currentManual, null, 2),
+      manual_rates: normalizedManual,
+      manual_rates_text: normalizedManual ? JSON.stringify(normalizedManual, null, 2) : "",
     };
 
     this._saving = true;
@@ -870,7 +892,7 @@ class TaiPowerConfigCard extends HTMLElement {
 
     try {
       await this._hass.callService("taipower_bimonthly_cost", "update_config", {
-        manual_rates: currentManual,
+        manual_rates: normalizedManual,
       });
       this._message = "費率已送出，等待整合同步。";
       this._dirty = true;
@@ -890,9 +912,9 @@ class TaiPowerConfigCard extends HTMLElement {
     if (!this._hass) return;
 
     const mode = this._editConfig.billing_mode || "residential";
-    const currentManual = { ...(this._config.manual_rates || {}) };
+    const currentManual = { ...(this._normalizeManualRates(this._config.manual_rates) || {}) };
     delete currentManual[mode];
-    const nextManual = Object.keys(currentManual).length ? currentManual : null;
+    const nextManual = this._normalizeManualRates(currentManual);
 
     this._saving = true;
     this._activeAction = "reset_rates";
