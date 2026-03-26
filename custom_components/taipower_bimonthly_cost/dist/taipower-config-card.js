@@ -23,12 +23,15 @@ class TaiPowerConfigCard extends HTMLElement {
       manual_rates: null,
     };
     this._editConfig = { ...this._config };
+    this._sensorName = null;
+    this._configuredEntryId = null;
+    this._entryId = null;
     this._ratesInfo = {
       rates_version: "—",
       rates_age_days: "—",
       manual_override: false,
     };
-    this._version = "1.5.29";
+    this._version = "1.5.31";
   }
 
   setConfig(config) {
@@ -36,6 +39,8 @@ class TaiPowerConfigCard extends HTMLElement {
       title: "⚡ 台電費率設定",
       ...config,
     };
+    this._sensorName = (config && config.sensor) || null;
+    this._configuredEntryId = (config && config.entry_id) || null;
     this._render();
   }
 
@@ -167,15 +172,37 @@ class TaiPowerConfigCard extends HTMLElement {
     let powerCost = null;
     let kwhCost = null;
     let rateStatus = null;
+    let targetError = "";
+
+    // Preferred: bind by stable config entry id.
+    let targetEntryId = this._configuredEntryId || null;
+
+    // Compatibility mode: resolve entry by a referenced sensor.
+    if (!targetEntryId && this._sensorName) {
+      const targetRef = states[this._sensorName];
+      if (!targetRef) {
+        targetError = `找不到指定 sensor：${this._sensorName}`;
+      } else {
+        targetEntryId = targetRef.attributes?.config_entry_id || null;
+        if (!targetEntryId) {
+          targetError = `指定 sensor 無法解析 config_entry_id：${this._sensorName}，請改用 entry_id 或 rate_status / power_cost sensor`;
+        }
+      }
+    }
 
     for (const [entityId, stateObj] of Object.entries(states)) {
       if (!entityId.startsWith("sensor.")) continue;
+      if (targetEntryId && stateObj.attributes?.config_entry_id !== targetEntryId) continue;
       if (!powerCost && entityId.endsWith("_power_cost")) powerCost = { entityId, stateObj };
       if (!kwhCost && entityId.endsWith("_kwh_cost")) kwhCost = { entityId, stateObj };
       if (!rateStatus && entityId.endsWith("_rate_status")) rateStatus = { entityId, stateObj };
     }
 
-    return { powerCost, kwhCost, rateStatus };
+    if (!targetError && targetEntryId && !powerCost && !kwhCost && !rateStatus) {
+      targetError = `找不到 entry_id 對應的台電 sensors：${targetEntryId}`;
+    }
+
+    return { powerCost, kwhCost, rateStatus, entryId: targetEntryId, targetError };
   }
 
   _extractConfigFromRef(ref) {
@@ -195,7 +222,17 @@ class TaiPowerConfigCard extends HTMLElement {
   }
 
   _buildBackendSnapshot() {
-    const { powerCost, kwhCost, rateStatus } = this._findReferenceSensors();
+    const { powerCost, kwhCost, rateStatus, entryId, targetError } = this._findReferenceSensors();
+
+    // Resolve entry_id from explicit config or first-found sensor
+    const resolvedEntryId = entryId
+      || powerCost?.stateObj?.attributes?.config_entry_id
+      || kwhCost?.stateObj?.attributes?.config_entry_id
+      || rateStatus?.stateObj?.attributes?.config_entry_id
+      || this._entryId
+      || null;
+    if (resolvedEntryId) this._entryId = resolvedEntryId;
+
     const config =
       this._extractConfigFromRef(rateStatus) ||
       this._extractConfigFromRef(powerCost) ||
@@ -209,7 +246,7 @@ class TaiPowerConfigCard extends HTMLElement {
         }
       : null;
 
-    return { config, rates };
+    return { config, rates, targetError };
   }
 
   _normalizeManualRates(value) {
@@ -247,6 +284,11 @@ class TaiPowerConfigCard extends HTMLElement {
 
   _syncFromHass() {
     const snap = this._buildBackendSnapshot();
+    if (snap.targetError && !snap.config && !snap.rates) {
+      this._message = "";
+      this._error = snap.targetError;
+      return;
+    }
     if (snap.config) {
       const next = {
         ...snap.config,
@@ -257,6 +299,9 @@ class TaiPowerConfigCard extends HTMLElement {
         ...next,
         manual_rates_text: next.manual_rates ? JSON.stringify(next.manual_rates, null, 2) : "",
       };
+      if (this._error && (this._error.startsWith("找不到指定 sensor：") || this._error.startsWith("指定 sensor 無法解析 config_entry_id") || this._error.startsWith("找不到 entry_id 對應的台電 sensors："))) {
+        this._error = "";
+      }
     }
 
     if (snap.rates) {
@@ -831,6 +876,7 @@ class TaiPowerConfigCard extends HTMLElement {
         billing_mode: this._editConfig.billing_mode,
         meter_start_day: this._editConfig.meter_start_day,
         manual_rates: manualRates,
+        ...(this._entryId ? { entry_id: this._entryId } : {}),
       });
 
       this._config = {
@@ -902,6 +948,7 @@ class TaiPowerConfigCard extends HTMLElement {
     try {
       await this._hass.callService("taipower_bimonthly_cost", "update_config", {
         manual_rates: normalizedManual,
+        ...(this._entryId ? { entry_id: this._entryId } : {}),
       });
       this._message = "費率已送出，等待整合同步。";
       this._dirty = true;
@@ -933,6 +980,7 @@ class TaiPowerConfigCard extends HTMLElement {
     try {
       await this._hass.callService("taipower_bimonthly_cost", "update_config", {
         manual_rates: nextManual,
+        ...(this._entryId ? { entry_id: this._entryId } : {}),
       });
       this._config.manual_rates = nextManual;
       this._editConfig.manual_rates = nextManual;

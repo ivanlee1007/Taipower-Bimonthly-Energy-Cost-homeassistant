@@ -288,6 +288,7 @@ class EnergyCostSensor(KwhCostSensor):
             ATTR_BILLING_MODE: self._billing_mode,
             ATTR_PDF_VERSION: mode_info.get("pdf_version", "unknown"),
             CONF_MANUAL_RATES: self._entry_data.get(CONF_MANUAL_RATES),
+            "config_entry_id": self._entry_id,
         }
 
     async def async_added_to_hass(self):
@@ -374,6 +375,7 @@ class RateStatusSensor(SensorEntity):
             CONF_MANUAL_RATES: manual,
             "status_code": self._status,
             "manual_override": manual_override,
+            "config_entry_id": self._entry_id,
         }
         if "mismatches" in self._details:
             attrs["mismatches"] = self._details["mismatches"]
